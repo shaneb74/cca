@@ -6,6 +6,7 @@ import streamlit as st
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 
+# ---------- Helpers ----------
 def money(x):
     try:
         return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -18,22 +19,27 @@ def load_spec(path: str):
 def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
     flat = dict(existing_fields or {})
     groups = {g["id"]: g for g in groups_cfg}
+
     for gid, answers in grouped_answers.items():
         cfg = groups.get(gid)
         if not cfg:
             continue
+        # Respect conditional groups against current flat state
         cond = cfg.get("condition")
         if cond and flat.get(cond.get("field")) != cond.get("equals"):
             continue
+
         for f in cfg["fields"]:
             field_name = f["field"]
             label = f.get("label", f["field"])
             kind = f.get("kind", "currency")
             default = f.get("default", 0)
+
             raw_val = answers.get(label)
             if raw_val is None:
                 raw_val = answers.get(field_name, default)
             value = raw_val
+
             if kind == "currency":
                 try:
                     flat[field_name] = float(value)
@@ -52,15 +58,18 @@ def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
 def compute(spec, inputs):
     settings = spec["settings"]
     lookups = spec["lookups"]
+
     def per_person_cost(person):
         care_type = inputs.get(f"care_type_person_{person}")
         care_level = inputs.get(f"care_level_person_{person}")
         mobility = inputs.get(f"mobility_person_{person}")
         chronic = inputs.get(f"chronic_person_{person}")
+
         care_level_add = lookups["care_level_adders"].get(care_level, 0)
         mobility_fac = lookups["mobility_adders"]["facility"].get(mobility, 0)
         mobility_home = lookups["mobility_adders"]["in_home"].get(mobility, 0)
         chronic_add = lookups["chronic_adders"].get(chronic, 0)
+
         if care_type == "In-Home Care (professional staff such as nurses, CNAs, or aides)":
             hours = str(inputs.get(f"hours_per_day_person_{person}", "0"))
             hourly = lookups["in_home_care_matrix"].get(hours, 0)
@@ -75,11 +84,13 @@ def compute(spec, inputs):
             return money(facility_cost)
         else:
             return 0.0
+
     def shared_unit_adjustment():
         if not (inputs.get("person_a_in_care") and inputs.get("person_b_in_care")):
             return 0.0
         if not inputs.get("share_one_unit"):
             return 0.0
+
         a_type = inputs.get("care_type_person_a")
         b_type = inputs.get("care_type_person_b")
         facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
@@ -90,19 +101,23 @@ def compute(spec, inputs):
                 room_base_b *= spec["settings"]["memory_care_multiplier"]
             return money(room_base_b - spec["settings"]["second_person_cost"])
         return 0.0
+
     a_selected = per_person_cost("a") if inputs.get("person_a_in_care") else 0.0
     b_selected = per_person_cost("b") if inputs.get("person_b_in_care") else 0.0
     shared_adj = shared_unit_adjustment()
     care_cost_total = money(a_selected + b_selected - shared_adj)
+
     optional_fields = ["optional_rx","optional_personal_care","optional_phone_internet","optional_life_insurance",
                        "optional_transportation","optional_family_travel","optional_auto","optional_auto_insurance","optional_other"]
     optional_sum = sum(inputs.get(k, 0.0) for k in optional_fields)
     home_fields = ["mortgage","taxes","insurance","hoa","utilities"]
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
     house_cost_total = home_sum if inputs.get("maintain_home_household") else 0.0
+
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_total = (spec["settings"]["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (spec["settings"]["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
+
     household_income = sum([
         inputs.get("social_security_person_a", 0.0),
         inputs.get("social_security_person_b", 0.0),
@@ -110,14 +125,17 @@ def compute(spec, inputs):
         inputs.get("pension_person_b", 0.0),
         inputs.get("re_investment_income", 0.0)
     ]) + va_total + ltc_total
+
     monthly_cost_full = care_cost_total + house_cost_total + optional_sum
     monthly_gap = max(0.0, monthly_cost_full - household_income)
     total_assets = inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0)
+
     if monthly_gap <= 0:
         display_years = spec["settings"]["display_cap_years_funded"]
     else:
         years_funded = total_assets / (monthly_gap * 12) if (monthly_gap * 12) > 0 else float("inf")
         display_years = min(years_funded, spec["settings"]["display_cap_years_funded"])
+
     return {
         "care_cost_total": money(care_cost_total),
         "monthly_cost": money(monthly_cost_full),
@@ -127,169 +145,194 @@ def compute(spec, inputs):
         "years_funded_cap30": (None if display_years is None or display_years == float("inf") else round(display_years,2))
     }
 
+# ---------- UI (progressive steps + modular categories) ----------
 st.set_page_config(page_title="Senior Care Cost Wizard", page_icon="🧭", layout="centered")
-st.title("🧭 Senior Care Cost Wizard")
-
 spec = load_spec(JSON_PATH)
 groups_cfg = spec.get("ui_groups", [])
+groups = {g["id"]: g for g in groups_cfg}
 
+if "step" not in st.session_state:
+    st.session_state.step = 1
+
+st.title("🧭 Senior Care Cost Wizard")
 with st.expander("Loaded calculator spec (JSON)", expanded=False):
     st.code(JSON_PATH)
 
-who = st.radio("Who are you planning care for?", ["Myself", "Someone else"], index=0)
+# Names from state
+care_recipient = st.session_state.get("care_recipient", "Care Recipient")
+planner_name = st.session_state.get("planner", "Planner")
+include_b_state = st.session_state.get("include_b", False)
+person_b_name = st.session_state.get("person_b_name", "Partner")
 
-relationship = None
+# ---------- Step 1 ----------
+st.header("Step 1 · Who is this plan for?")
+who = st.radio("Who are you planning care for?", ["Myself", "Someone else"], index=0, key="who_radio")
 if who == "Someone else":
-    relationship = st.selectbox("Your relationship to the person:", [
+    st.selectbox("Your relationship to the person:", [
         "Spouse / Partner", "Parent / Parent-in-law", "Other relative / POA", "Friend / Other"
-    ])
+    ], key="relationship")
 
 col1, col2 = st.columns(2)
 with col1:
-    care_recipient = st.text_input("Care recipient's name", value="Care Recipient")
+    care_recipient = st.text_input("Care recipient's name", value=care_recipient, key="care_recipient")
 with col2:
-    planner = st.text_input("Your name (if different)", value="Planner" if who=="Someone else" else "")
+    planner_name = st.text_input("Your name (if different)", value=(planner_name if who=="Someone else" else ""), key="planner")
 
-st.markdown("---")
-st.subheader("Care Plan")
+if st.button("Continue to care plan →", type="primary"):
+    st.session_state.step = max(st.session_state.step, 2)
 
-st.markdown("**Person A (Care recipient)**")
-care_type = st.selectbox(
-    "Care type",
-    ["In-Home Care (professional staff such as nurses, CNAs, or aides)",
-     "Assisted Living (or Adult Family Home)",
-     "Memory Care"]
-)
+st.divider()
 
+# ---------- Step 2 ----------
 inputs = {"person_a_in_care": True, "person_b_in_care": False}
-inputs["care_type_person_a"] = care_type
-
-if care_type.startswith("In-Home Care"):
-    hours = st.selectbox("Hours of care per day", ["4","6","8","10","12","24"], index=2)
-    inputs["hours_per_day_person_a"] = hours
-else:
-    room = st.selectbox("Room type", ["Studio","1 Bedroom","2 Bedroom"], index=0)
-    inputs["room_type_person_a"] = room
-
-level = st.selectbox("Care level", ["Low","Medium","High"], index=1)
-mob = st.selectbox("Mobility", ["None","Walker","Wheelchair"], index=1)
-cc  = st.selectbox("Chronic conditions", ["None","Some conditions (manageable)","Multiple conditions (complex)"], index=1)
-inputs["care_level_person_a"] = level
-inputs["mobility_person_a"] = mob
-inputs["chronic_person_a"] = cc
-
-st.markdown("---")
-st.subheader("Spouse / Partner (optional)")
-st.caption("Even if your spouse/partner isn’t receiving paid care, keeping the home (mortgage/taxes/insurance/utilities) can affect how affordable your care is. Add them to account for household costs.")
-
-include_b = st.checkbox("Include spouse/partner in this plan?", value=False)
-
-if include_b:
-    inputs["person_b_in_care"] = True
-    pb_name = st.text_input("Person B name", value="Partner")
-
-    care_b = st.selectbox(
-        "Care type (Person B)",
-        [
-            "Stay at Home",
-            "In-Home Care (professional staff such as nurses, CNAs, or aides)",
-            "Assisted Living (or Adult Family Home)",
-            "Memory Care"
-        ],
-        index=0
+if st.session_state.step >= 2:
+    st.header(f"Step 2 · {care_recipient or 'Person A'} — Care plan")
+    care_type = st.selectbox(
+        "Care type",
+        ["In-Home Care (professional staff such as nurses, CNAs, or aides)",
+         "Assisted Living (or Adult Family Home)",
+         "Memory Care"],
+        key="care_type_a"
     )
-    inputs["care_type_person_b"] = care_b
+    inputs["care_type_person_a"] = care_type
 
-    if care_b.startswith("In-Home Care"):
-        hours_b = st.selectbox("Hours/day (B)", ["4","6","8","10","12","24"], index=1)
-        inputs["hours_per_day_person_b"] = hours_b
-    elif care_b in ["Assisted Living (or Adult Family Home)","Memory Care"]:
-        room_b = st.selectbox("Room type (B)", ["Studio","1 Bedroom","2 Bedroom"], index=0)
-        inputs["room_type_person_b"] = room_b
-
-    same_adders = st.checkbox("Use same care level/mobility/chronic as Person A", value=True)
-    if same_adders:
-        inputs["care_level_person_b"] = inputs["care_level_person_a"]
-        inputs["mobility_person_b"] = inputs["mobility_person_a"]
-        inputs["chronic_person_b"]   = inputs["chronic_person_a"]
+    if care_type.startswith("In-Home Care"):
+        inputs["hours_per_day_person_a"] = st.selectbox("Hours of care per day", ["4","6","8","10","12","24"], index=2, key="hours_a")
     else:
-        level_b = st.selectbox("Care level (B)", ["Low","Medium","High"], index=0)
-        mob_b   = st.selectbox("Mobility (B)", ["None","Walker","Wheelchair"], index=0)
-        cc_b    = st.selectbox("Chronic conditions (B)", ["None","Some conditions (manageable)","Multiple conditions (complex)"], index=0)
-        inputs["care_level_person_b"] = level_b
-        inputs["mobility_person_b"]   = mob_b
-        inputs["chronic_person_b"]    = cc_b
+        inputs["room_type_person_a"] = st.selectbox("Room type", ["Studio","1 Bedroom","2 Bedroom"], index=0, key="room_a")
 
-    facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
-    if (inputs["care_type_person_a"] in facility_types) and (care_b in facility_types):
-        share = st.checkbox("Share one unit?", value=False)
-        inputs["share_one_unit"] = share
-else:
-    inputs["person_b_in_care"] = False
-    for key in list(inputs.keys()):
-        if key.endswith("_person_b") or key == "share_one_unit":
-            inputs.pop(key, None)
+    inputs["care_level_person_a"] = st.selectbox("Care level", ["Low","Medium","High"], index=1, key="level_a")
+    inputs["mobility_person_a"]   = st.selectbox("Mobility", ["None","Walker","Wheelchair"], index=1, key="mob_a")
+    inputs["chronic_person_a"]    = st.selectbox("Chronic conditions", ["None","Some conditions (manageable)","Multiple conditions (complex)"], index=1, key="cc_a")
 
-st.markdown("---")
-st.subheader("Household & Finances")
+    st.subheader("Spouse / Partner (optional)")
+    st.caption("Even if your spouse/partner isn’t receiving paid care, keeping the home (mortgage/taxes/insurance/utilities) can affect how affordable your care is. Add them to account for household costs.")
+    include_b = st.checkbox("Include spouse/partner in this plan?", value=include_b_state, key="include_b")
+    st.session_state.include_b = include_b
 
-keep_home = st.checkbox("Maintain current home while in care?", value=False)
-inputs["maintain_home_household"] = keep_home
+    if include_b:
+        inputs["person_b_in_care"] = True
+        person_b_name = st.text_input("Person B name", value=person_b_name, key="person_b_name")
+        st.subheader(f"{person_b_name or 'Person B'} — Care plan")
 
-groups = {g["id"]: g for g in groups_cfg}
+        care_b = st.selectbox(
+            "Care type (Person B)",
+            ["Stay at Home",
+             "In-Home Care (professional staff such as nurses, CNAs, or aides)",
+             "Assisted Living (or Adult Family Home)",
+             "Memory Care"],
+            index=0, key="care_type_b"
+        )
+        inputs["care_type_person_b"] = care_b
 
-def group_form(gid):
-    g = groups[gid]
-    cond = g.get("condition")
-    if cond and inputs.get(cond["field"]) != cond["equals"]:
-        return None
-    st.markdown(f"**{g['label']}** — {g['prompt']}")
-    ans = {}
-    for f in g["fields"]:
-        label = f.get("label", f["field"])
-        kind = f.get("kind","currency")
-        default = f.get("default", 0)
-        if kind == "boolean":
-            v = st.checkbox(label, value=(str(default).lower() in {"yes","true","1"}))
-            ans[label] = v
+        if care_b.startswith("In-Home Care"):
+            inputs["hours_per_day_person_b"] = st.selectbox("Hours/day (B)", ["4","6","8","10","12","24"], index=1, key="hours_b")
+        elif care_b in ["Assisted Living (or Adult Family Home)","Memory Care"]:
+            inputs["room_type_person_b"] = st.selectbox("Room type (B)", ["Studio","1 Bedroom","2 Bedroom"], index=0, key="room_b")
+
+        same_adders = st.checkbox("Use same care level/mobility/chronic as Person A", value=True, key="same_adders_b")
+        if same_adders:
+            inputs["care_level_person_b"] = inputs["care_level_person_a"]
+            inputs["mobility_person_b"]   = inputs["mobility_person_a"]
+            inputs["chronic_person_b"]    = inputs["chronic_person_a"]
         else:
-            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
-            ans[label] = v
-    return ans
+            inputs["care_level_person_b"] = st.selectbox("Care level (B)", ["Low","Medium","High"], index=0, key="level_b")
+            inputs["mobility_person_b"]   = st.selectbox("Mobility (B)", ["None","Walker","Wheelchair"], index=0, key="mob_b")
+            inputs["chronic_person_b"]    = st.selectbox("Chronic conditions (B)", ["None","Some conditions (manageable)","Multiple conditions (complex)"], index=0, key="cc_b")
 
-grouped_answers = {}
+        facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
+        if (inputs["care_type_person_a"] in facility_types) and (care_b in facility_types):
+            inputs["share_one_unit"] = st.checkbox("Share one unit?", value=False, key="share_unit")
 
-with st.form("finance_form"):
-    if "group_income_person_a" in groups:
-        ans = group_form("group_income_person_a")
-        if ans: grouped_answers["group_income_person_a"] = ans
-    if inputs.get("person_b_in_care") and "group_income_person_b" in groups:
-        ans = group_form("group_income_person_b")
-        if ans: grouped_answers["group_income_person_b"] = ans
-    if "group_optional_costs" in groups:
-        ans = group_form("group_optional_costs")
-        if ans: grouped_answers["group_optional_costs"] = ans
-    if "group_home_carry" in groups:
-        ans = group_form("group_home_carry")
-        if ans: grouped_answers["group_home_carry"] = ans
-    if "group_benefits_person_a" in groups:
-        ans = group_form("group_benefits_person_a")
-        if ans: grouped_answers["group_benefits_person_a"] = ans
-    if inputs.get("person_b_in_care") and "group_benefits_person_b" in groups:
-        ans = group_form("group_benefits_person_b")
-        if ans: grouped_answers["group_benefits_person_b"] = ans
-    if "group_assets" in groups:
-        ans = group_form("group_assets")
-        if ans: grouped_answers["group_assets"] = ans
-    submitted = st.form_submit_button("Calculate")
+    if st.button("Continue to finances →", type="primary"):
+        st.session_state.step = max(st.session_state.step, 3)
 
-if submitted:
-    flat_inputs = apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=inputs)
-    res = compute(spec, flat_inputs)
-    st.success("Calculation complete")
-    st.metric("Monthly cost (all-in)", f"${res['monthly_cost']:,.2f}")
-    st.metric("Household income", f"${res['household_income']:,.2f}")
-    st.metric("Monthly gap", f"${res['monthly_gap']:,.2f}")
-    st.metric("Assets total", f"${res['total_assets']:,.2f}")
-    yf = res['years_funded_cap30']
-    st.metric("Years funded (cap 30)", "N/A" if yf is None else yf)
+st.divider()
+
+# ---------- Step 3: Modular Household & Finances ----------
+if st.session_state.step >= 3:
+    st.header("Step 3 · Choose what you want to enter")
+    st.caption("Select the categories you want to include. We’ll only ask for those details. You can come back and add more any time.")
+
+    CATEGORY_MAP = {
+        "Income": ["group_income_person_a", "group_income_person_b"],
+        "Benefits (VA / LTC)": ["group_benefits_person_a", "group_benefits_person_b"],
+        "House carry (mortgage/taxes/etc.)": ["group_home_carry"],
+        "Optional monthly costs": ["group_optional_costs"],
+        "Assets": ["group_assets"]
+    }
+
+    default_selected = ["Income", "Benefits (VA / LTC)", "Optional monthly costs", "Assets"]
+    chosen = st.multiselect("Categories to include:", list(CATEGORY_MAP.keys()), default=default_selected, key="chosen_categories")
+
+    keep_home = st.checkbox("Maintain current home while in care?", value=False, key="keep_home")
+    inputs["maintain_home_household"] = keep_home
+
+    def group_form_modular(gid, name_hint=None):
+        g = groups[gid]
+        cond = g.get("condition")
+        if cond and inputs.get(cond["field"]) != cond["equals"]:
+            return None
+        # Dynamic heading with names
+        heading = g['label']
+        if name_hint:
+            heading = heading.replace("Person A", name_hint.get("A","Person A")).replace("Person B", name_hint.get("B","Person B"))
+        st.markdown(f"**{heading}** — {g['prompt']}")
+
+        # NEW: let user choose which fields in this group to provide
+        field_labels = [f.get("label", f["field"]) for f in g["fields"]]
+        preselect = field_labels  # default: all selected
+        chosen_fields = st.multiselect("Which items do you want to enter?", field_labels, default=preselect, key=f"choose_{gid}")
+
+        ans = {}
+        for f in g["fields"]:
+            label = f.get("label", f["field"])
+            kind = f.get("kind","currency")
+            default = f.get("default", 0)
+
+            if label not in chosen_fields:
+                # If skipped, set zero/No silently
+                ans[label] = 0 if kind == "currency" else "No"
+                continue
+
+            if kind == "boolean":
+                v = st.checkbox(label, value=(str(default).lower() in {"yes","true","1"}), key=f"bool_{gid}_{label}")
+                ans[label] = v
+            else:
+                v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"num_{gid}_{label}")
+                ans[label] = v
+        return ans
+
+    grouped_answers = {}
+
+    with st.form("finance_form"):
+        name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
+
+        for cat in chosen:
+            for gid in CATEGORY_MAP[cat]:
+                # Skip Person B groups if B not included
+                if gid.endswith("_person_b") and not st.session_state.get("include_b"):
+                    continue
+                if gid not in groups:
+                    continue
+                ans = group_form_modular(gid, name_hint=name_hint)
+                if ans is not None:
+                    grouped_answers[gid] = ans
+
+        submitted = st.form_submit_button("Calculate")
+
+    if submitted:
+        flat_inputs = apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=inputs)
+        res = compute(spec, flat_inputs)
+
+        st.success("Calculation complete")
+        colA, colB, colC = st.columns(3)
+        with colA:
+            st.metric("Monthly cost (all-in)", f"${res['monthly_cost']:,.2f}")
+            st.metric("Monthly gap", f"${res['monthly_gap']:,.2f}")
+        with colB:
+            st.metric("Household income", f"${res['household_income']:,.2f}")
+            st.metric("Assets total", f"${res['total_assets']:,.2f}")
+        with colC:
+            yf = res['years_funded_cap30']
+            st.metric("Years funded (cap 30)", "N/A" if yf is None else yf)
