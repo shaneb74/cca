@@ -22,6 +22,10 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path)
 
+        # Merge lookups (shallow)
+        if overlay.get("lookups"):
+            spec.setdefault("lookups", {}).update(overlay["lookups"])
+
         # Add/override top-level modules
         if overlay.get("modules"):
             spec["modules"] = overlay["modules"]
@@ -152,8 +156,10 @@ def compute(spec, inputs):
     shared_adj = shared_unit_adjustment()
     care_cost_total = money(a_selected + b_selected - shared_adj)
 
+    # Optional costs include HELOC payment if any
     optional_fields = ["optional_rx","optional_personal_care","optional_phone_internet","optional_life_insurance",
-                       "optional_transportation","optional_family_travel","optional_auto","optional_auto_insurance","optional_other"]
+                       "optional_transportation","optional_family_travel","optional_auto","optional_auto_insurance",
+                       "optional_other","heloc_payment_monthly"]
     optional_sum = sum(inputs.get(k, 0.0) for k in optional_fields)
     home_fields = ["mortgage","taxes","insurance","hoa","utilities"]
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
@@ -163,7 +169,8 @@ def compute(spec, inputs):
     ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
 
-    reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0)
+    # Re-investment + HECM + HELOC draw flow into income
+    reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0) + inputs.get("heloc_draw_monthly", 0.0)
 
     household_income = sum([
         inputs.get("social_security_person_a", 0.0),
@@ -320,7 +327,7 @@ if st.session_state.step >= 2:
             "Assisted Living (or Adult Family Home)", "Memory Care"
         ]
 
-        # Home strategy (safe keys: widget uses *_radio; store final choice under 'home_plan_choice')
+        # Home strategy (use safe widget key; store final choice separately)
         if care_b == "Stay at Home (no paid care)":
             st.markdown("**Home while your partner is in care**")
             home_strategy_choice = st.radio(
@@ -330,7 +337,6 @@ if st.session_state.step >= 2:
                  "Use a reverse mortgage / HECM"],
                 index=0, key="home_strategy_radio"
             )
-            # derive flags from the choice without writing over the widget key
             st.session_state["home_plan_choice"] = home_strategy_choice
             if home_strategy_choice == "Keep living in the home (maintain)":
                 st.session_state.keep_home = True
@@ -416,12 +422,25 @@ if st.session_state.step >= 3:
         }
 
     name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
+    # Pull VA tiers from spec (overlay can define them). Fallbacks are editable via overlay.
     va_tiers = spec.get("lookups", {}).get("va_tiers", [
         {"id":"veteran_alone","label":"Veteran (no spouse)","monthly":0},
         {"id":"veteran_with_spouse","label":"Veteran with spouse","monthly":0},
         {"id":"surviving_spouse","label":"Surviving spouse","monthly":0},
         {"id":"two_veterans_married","label":"Two married veterans","monthly":0}
     ])
+
+    # --- Custom helpers for Step 3 rendering ---
+    def render_income_fallback_for_person_b():
+        st.markdown("#### Income — Spouse/Partner")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            ssb = st.number_input("Social Security — B", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="inc_ss_b_fb")
+        with col2:
+            penb = st.number_input("Pension — B", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="inc_pen_b_fb")
+        with col3:
+            othb = st.number_input("Investment/Other household income", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="inc_oth_b_fb")
+        return {"social_security_person_b": ssb, "pension_person_b": penb, "re_investment_income": othb}
 
     def render_benefits_group(person_label: str, gid: str):
         g = groups[gid]
@@ -453,6 +472,20 @@ if st.session_state.step >= 3:
                     ans[f.get("label")] = val
             return ans
 
+    # Sale estimate card (if selling)
+    sale_result = None
+    if st.session_state.get("home_to_assets", False):
+        st.markdown("### Home sale estimate")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            sale_price = st.number_input("Expected sale price", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="sale_price")
+        with c2:
+            payoff = st.number_input("Remaining mortgage payoff", min_value=0.0, value=0.0, step=1000.0, format="%.2f", key="sale_payoff")
+        with c3:
+            sell_pct = st.number_input("Selling costs (%)", min_value=0.0, value=8.0, step=0.5, format="%.2f", key="sell_pct")
+        sale_result = max(0.0, sale_price - payoff - (sell_pct/100.0)*sale_price)
+        st.metric("Estimated net proceeds to assets", f"${sale_result:,.2f}")
+
     def render_standard_group(gid, person_map=None):
         g = groups[gid]
         cond = g.get("condition")
@@ -470,6 +503,18 @@ if st.session_state.step >= 3:
                 label = f.get("label", f["field"])
                 kind = f.get("kind","currency")
                 default = f.get("default", 0)
+                # Assets special handling
+                if g["id"] == "group_assets":
+                    if "Home equity" in label:
+                        if keep_home:
+                            st.caption("Home equity is not available here because the plan is to **keep living in the home**. "
+                                       "If you want to access equity without selling, consider a HELOC below.")
+                            continue
+                        if st.session_state.get("home_to_assets", False):
+                            st.caption("Home equity comes from the **Home sale estimate** above and will be used automatically.")
+                            continue
+                    if "Other liquid assets" in label:
+                        st.caption("Examples: checking/savings, brokerage, CDs, 401k/IRA (spendable portion), cash reserves.")
                 if kind == "boolean":
                     v = st.checkbox(label, value=(str(default).lower() in {'yes','true','1'}), key=f"bool_{gid}_{label}")
                     ans[label] = v
@@ -480,17 +525,31 @@ if st.session_state.step >= 3:
 
     grouped_answers = {}
     with st.form("finance_form"):
+        # Optional HECM draw quick input
         if st.session_state.get("expect_hecm", False):
             st.markdown("### Home financing (reverse mortgage)")
             hecm = st.number_input("Expected monthly reverse mortgage/HECM draw", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="hecm_draw")
             grouped_answers["_hecm_draw"] = {"hecm_draw_monthly": hecm}
 
+        # Optional HELOC inputs when keeping the home
+        if keep_home and not st.session_state.get("expect_hecm", False):
+            st.markdown("### Optional: Access home equity without selling")
+            st.caption("If you plan to use a HELOC/line of credit: enter the expected **monthly draw** and **monthly payment**.")
+            heloc_draw = st.number_input("HELOC monthly draw (added to income)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="heloc_draw")
+            heloc_pay  = st.number_input("HELOC monthly payment (adds to expenses)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="heloc_pay")
+            grouped_answers["_heloc"] = {"heloc_draw_monthly": heloc_draw, "heloc_payment_monthly": heloc_pay}
+
+        # Render categories
         for cat, gids in CATEGORY_MAP.items():
             st.markdown(f"### {cat}")
             for gid in gids:
                 if gid.endswith("_person_b") and not st.session_state.get("include_b"):
                     continue
                 if gid not in groups:
+                    # Fallback: ensure we still ask spouse income if group missing
+                    if gid.endswith("_person_b") and st.session_state.get("include_b"):
+                        fa = render_income_fallback_for_person_b()
+                        grouped_answers["_income_b_fb"] = fa
                     continue
                 if gid.startswith("group_benefits"):
                     person_label = name_hint["A"] if gid.endswith("_person_a") else name_hint["B"]
@@ -504,8 +563,23 @@ if st.session_state.step >= 3:
 
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, {k:v for k,v in grouped_answers.items() if not k.startswith("_")}, existing_fields=inputs)
+        # Inject HECM/HELOC & fallback spouse income
         hecm_draw = grouped_answers.get("_hecm_draw", {}).get("hecm_draw_monthly", 0.0)
         flat_inputs["hecm_draw_monthly"] = float(hecm_draw or 0.0)
+        heloc = grouped_answers.get("_heloc", {})
+        flat_inputs["heloc_draw_monthly"] = float(heloc.get("heloc_draw_monthly", 0.0))
+        flat_inputs["heloc_payment_monthly"] = float(heloc.get("heloc_payment_monthly", 0.0))
+        if "_income_b_fb" in grouped_answers:
+            fb = grouped_answers["_income_b_fb"]
+            flat_inputs.setdefault("social_security_person_b", float(fb.get("social_security_person_b", 0.0)))
+            flat_inputs.setdefault("pension_person_b", float(fb.get("pension_person_b", 0.0)))
+            flat_inputs["re_investment_income"] = float(flat_inputs.get("re_investment_income", 0.0)) + float(fb.get("re_investment_income", 0.0))
+
+        # Inject sale proceeds if set
+        if sale_result is not None:
+            flat_inputs["home_equity"] = float(sale_result)
+
+        # VA mapping safeguard
         flat_inputs["va_benefit_person_a"] = float(flat_inputs.get("va_benefit_person_a", flat_inputs.get("VA benefit (monthly $)", 0.0)))
         flat_inputs["va_benefit_person_b"] = float(flat_inputs.get("va_benefit_person_b", flat_inputs.get("VA benefit (monthly $) — B", 0.0)))
         res = compute(spec, flat_inputs)

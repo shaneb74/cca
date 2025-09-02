@@ -1,115 +1,18 @@
+
 {
-  "modules": [
-    {
-      "id": "income",
-      "label": "Income",
-      "default_selected": true
-    },
-    {
-      "id": "benefits",
-      "label": "Benefits (VA / LTC)",
-      "default_selected": true
-    },
-    {
-      "id": "house_carry",
-      "label": "House carry (mortgage/taxes/etc.)",
-      "default_selected": false,
-      "condition": {
-        "field": "maintain_home_household",
-        "equals": true
-      }
-    },
-    {
-      "id": "optional_costs",
-      "label": "Optional monthly costs",
-      "default_selected": true
-    },
-    {
-      "id": "assets",
-      "label": "Assets",
-      "default_selected": true
-    }
-  ],
-  "ui_group_overrides": {
-    "group_income_person_a": {
-      "module": "income",
-      "field_overrides": {
-        "*": {
-          "optional": true,
-          "skip_value": 0
-        }
-      }
-    },
-    "group_income_person_b": {
-      "module": "income",
-      "field_overrides": {
-        "*": {
-          "optional": true,
-          "skip_value": 0
-        }
-      }
-    },
-    "group_benefits_person_a": {
-      "module": "benefits",
-      "field_overrides": {
-        "VA benefit (monthly $)": {
-          "optional": true,
-          "skip_value": 0,
-          "kind": "currency"
-        },
-        "LTC insurance \u2014 A": {
-          "optional": true,
-          "skip_value": "No",
-          "kind": "boolean"
-        }
-      }
-    },
-    "group_benefits_person_b": {
-      "module": "benefits",
-      "field_overrides": {
-        "VA benefit (monthly $) \u2014 B": {
-          "optional": true,
-          "skip_value": 0,
-          "kind": "currency"
-        },
-        "LTC insurance \u2014 B": {
-          "optional": true,
-          "skip_value": "No",
-          "kind": "boolean"
-        }
-      }
-    },
-    "group_home_carry": {
-      "module": "house_carry",
-      "field_overrides": {
-        "*": {
-          "optional": true,
-          "skip_value": 0
-        }
-      }
-    },
-    "group_optional_costs": {
-      "module": "optional_costs",
-      "field_overrides": {
-        "*": {
-          "optional": true,
-          "skip_value": 0
-        }
-      }
-    },
-    "group_assets": {
-      "module": "assets",
-      "field_overrides": {
-        "*": {
-          "optional": true,
-          "skip_value": 0
-        }
-      }
-    }
+  "lookups": {
+    "va_tiers": [
+      {"id": "veteran_alone", "label": "Veteran (no spouse)", "monthly": 0},
+      {"id": "veteran_with_spouse", "label": "Veteran with spouse", "monthly": 0},
+      {"id": "surviving_spouse", "label": "Surviving spouse", "monthly": 0},
+      {"id": "two_veterans_married", "label": "Two married veterans", "monthly": 0}
+    ]
   },
-  "ui_contract": {
-    "modules": "Render a checkbox per module; only render groups for modules that are checked; respect module.condition if present.",
-    "groups": "Within each rendered group, show an 'Include' checkbox for each field. If not included, write field.skip_value.",
-    "merge_instructions": "For each ui_group, if an override exists, apply group.module and field overrides; add top-level modules."
+  "ui_group_overrides": {
+    "group_assets": {
+      "field_overrides": {
+        "*": {"optional": true}
+      }
+    }
   }
 }
