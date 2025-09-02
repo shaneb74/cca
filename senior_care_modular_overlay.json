@@ -1,38 +1,34 @@
 {
   "lookups": {
     "va_tiers": [
-      {"id": "veteran_alone", "label": "Veteran (no spouse)", "monthly": 0},
-      {"id": "veteran_with_spouse", "label": "Veteran with spouse", "monthly": 0},
-      {"id": "surviving_spouse", "label": "Surviving spouse", "monthly": 0},
-      {"id": "two_veterans_married", "label": "Two married veterans", "monthly": 0}
-    ],
-    "state_multipliers": {
-      "National": 1.0,
-      "California": 1.3,
-      "New York": 1.25,
-      "Texas": 0.95
-      // Add more states based on CareScout data
-    }
+      {
+        "id": "veteran_alone",
+        "label": "Veteran (no spouse)",
+        "monthly": 2358.0
+      },
+      {
+        "id": "veteran_with_spouse",
+        "label": "Veteran with spouse",
+        "monthly": 2795.0
+      },
+      {
+        "id": "surviving_spouse",
+        "label": "Surviving spouse",
+        "monthly": 1515.0
+      },
+      {
+        "id": "two_veterans_married",
+        "label": "Two married veterans (both A&A)",
+        "monthly": 3740.0
+      }
+    ]
   },
   "ui_group_overrides": {
     "group_assets": {
       "field_overrides": {
-        "*": {"optional": true}
-      }
-    },
-    "group_healthcare_extras": {
-      "field_overrides": {
-        "*": {"optional": true, "tooltip": "These are common out-of-pocket costs not covered by basic Medicare."}
-      }
-    },
-    "group_other_debts": {
-      "field_overrides": {
-        "*": {"optional": true, "tooltip": "Include any ongoing debt payments to get a full picture."}
-      }
-    },
-    "group_home_mods": {
-      "field_overrides": {
-        "*": {"optional": true, "tooltip": "If aging in place, estimate monthly financed cost for home changes like ramps."}
+        "*": {
+          "optional": true
+        }
       }
     }
   }
