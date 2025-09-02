@@ -14,43 +14,54 @@ def money(x):
         return 0.0
 
 def _read_json(path: str):
-    return json.loads(Path(path).read_text())
+    try:
+        with Path(path).open('r', encoding='utf-8') as f:
+            return json.loads(f.read())
+    except json.JSONDecodeError as e:
+        st.error(f"Error decoding JSON file {path}: {str(e)}")
+        return {}
 
 def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
     spec = _read_json(base_path)
+    if not spec:
+        st.error(f"Failed to load base spec from {base_path}")
+        return {}
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path)
-        if overlay.get("lookups"):
-            spec.setdefault("lookups", {}).update(overlay["lookups"])
-        if overlay.get("modules"):
-            spec["modules"] = overlay["modules"]
-        overrides = overlay.get("ui_group_overrides", {})
-        gid_to_group = {g["id"]: g for g in spec.get("ui_groups", [])}
-        for gid, ov in overrides.items():
-            g = gid_to_group.get(gid)
-            if not g:
-                continue
-            if "module" in ov:
-                g["module"] = ov["module"]
-            field_ovs = ov.get("field_overrides", {})
-            wildcard = field_ovs.get("*", {})
-            for f in g.get("fields", []):
-                label = f.get("label", f["field"])
-                this_ov = field_ovs.get(label, {})
-                for k, v in wildcard.items():
-                    f.setdefault(k, v)
-                for k, v in this_ov.items():
-                    f[k] = v
-        for g in spec.get("ui_groups", []):
-            for f in g.get("fields", []):
-                kind = f.get("kind", "currency")
-                f.setdefault("optional", True)
-                if kind == "currency":
-                    f.setdefault("skip_value", 0)
-                elif kind == "boolean":
-                    f.setdefault("skip_value", "No")
-                else:
-                    f.setdefault("skip_value", None)
+        if not overlay:
+            st.warning(f"Failed to load overlay from {overlay_path}, proceeding with base spec")
+        else:
+            if overlay.get("lookups"):
+                spec.setdefault("lookups", {}).update(overlay["lookups"])
+            if overlay.get("modules"):
+                spec["modules"] = overlay["modules"]
+            overrides = overlay.get("ui_group_overrides", {})
+            gid_to_group = {g["id"]: g for g in spec.get("ui_groups", [])}
+            for gid, ov in overrides.items():
+                g = gid_to_group.get(gid)
+                if not g:
+                    continue
+                if "module" in ov:
+                    g["module"] = ov["module"]
+                field_ovs = ov.get("field_overrides", {})
+                wildcard = field_ovs.get("*", {})
+                for f in g.get("fields", []):
+                    label = f.get("label", f["field"])
+                    this_ov = field_ovs.get(label, {})
+                    for k, v in wildcard.items():
+                        f.setdefault(k, v)
+                    for k, v in this_ov.items():
+                        f[k] = v
+            for g in spec.get("ui_groups", []):
+                for f in g.get("fields", []):
+                    kind = f.get("kind", "currency")
+                    f.setdefault("optional", True)
+                    if kind == "currency":
+                        f.setdefault("skip_value", 0)
+                    elif kind == "boolean":
+                        f.setdefault("skip_value", "No")
+                    else:
+                        f.setdefault("skip_value", None)
     return spec
 
 def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
@@ -88,28 +99,28 @@ def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
     return flat
 
 def compute(spec, inputs):
-    settings = spec["settings"]
-    lookups = spec["lookups"]
+    settings = spec.get("settings", {})
+    lookups = spec.get("lookups", {})
     def per_person_cost(person):
         care_type = inputs.get(f"care_type_person_{person}")
         care_level = inputs.get(f"care_level_person_{person}")
         mobility = inputs.get(f"mobility_person_{person}")
         chronic = inputs.get(f"chronic_person_{person}")
-        care_level_add = lookups["care_level_adders"].get(care_level, 0)
-        mobility_fac = lookups["mobility_adders"]["facility"].get(mobility, 0)
-        mobility_home = lookups["mobility_adders"]["in_home"].get(mobility, 0)
-        chronic_add = lookups["chronic_adders"].get(chronic, 0)
-        state_mult = lookups["state_multipliers"].get(inputs.get("state", "National"), 1.0)
+        care_level_add = lookups.get("care_level_adders", {}).get(care_level, 0)
+        mobility_fac = lookups.get("mobility_adders", {}).get("facility", {}).get(mobility, 0)
+        mobility_home = lookups.get("mobility_adders", {}).get("in_home", {}).get(mobility, 0)
+        chronic_add = lookups.get("chronic_adders", {}).get(chronic, 0)
+        state_mult = lookups.get("state_multipliers", {}).get(inputs.get("state", "National"), 1.0)
         if care_type == "In-Home Care (professional staff such as nurses, CNAs, or aides)":
             hours = str(inputs.get(f"hours_per_day_person_{person}", "0"))
-            hourly = lookups["in_home_care_matrix"].get(hours, 0)
-            in_home_cost = hourly * settings["days_per_month"] + mobility_home + chronic_add
+            hourly = lookups.get("in_home_care_matrix", {}).get(hours, 0)
+            in_home_cost = hourly * settings.get("days_per_month", 30) + mobility_home + chronic_add
             return money(in_home_cost * state_mult)
         elif care_type in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
             room_type = inputs.get(f"room_type_person_{person}")
-            base_room = lookups["room_type"].get(room_type, 0)
+            base_room = lookups.get("room_type", {}).get(room_type, 0)
             if care_type == "Memory Care":
-                base_room *= settings["memory_care_multiplier"]
+                base_room *= settings.get("memory_care_multiplier", 1.2)
             facility_cost = base_room + care_level_add + mobility_fac + chronic_add
             return money(facility_cost * state_mult)
         return 0.0
@@ -124,10 +135,10 @@ def compute(spec, inputs):
         facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
         if (a_type in facility_types) and (b_type in facility_types):
             room_type_b = inputs.get("room_type_person_b")
-            room_base_b = spec["lookups"]["room_type"].get(room_type_b, 0)
+            room_base_b = lookups.get("room_type", {}).get(room_type_b, 0)
             if b_type == "Memory Care":
-                room_base_b *= spec["settings"]["memory_care_multiplier"]
-            return money(room_base_b - spec["settings"]["second_person_cost"])
+                room_base_b *= settings.get("memory_care_multiplier", 1.2)
+            return money(room_base_b - settings.get("second_person_cost", 1500))
         return 0.0
 
     a_selected = per_person_cost("a") if inputs.get("person_a_in_care") else 0.0
@@ -143,8 +154,8 @@ def compute(spec, inputs):
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
     house_cost_total = home_sum if inputs.get("maintain_home_household") else 0.0
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
-    ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
-                (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
+    ltc_total = (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
+                (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
     reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0) + inputs.get("heloc_draw_monthly", 0.0)
     investment_returns = inputs.get("other_assets", 0.0) * (inputs.get("investment_return_rate", 0.04) / 12)
     reinv += investment_returns
@@ -162,14 +173,14 @@ def compute(spec, inputs):
     total_assets = inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0)
     inflation_rate = inputs.get("inflation_rate", 0.03)
     if monthly_gap <= 0:
-        display_years = spec["settings"]["display_cap_years_funded"]
+        display_years = settings.get("display_cap_years_funded", 30)
     else:
         if inflation_rate > 0:
             years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
             years_funded /= (1 + inflation_rate)
         else:
             years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
-        display_years = min(years_funded, spec["settings"]["display_cap_years_funded"])
+        display_years = min(years_funded, settings.get("display_cap_years_funded", 30))
     return {
         "monthly_cost": monthly_cost_full,
         "monthly_gap": monthly_gap,
@@ -184,10 +195,14 @@ def compute(spec, inputs):
 
 # ---------- UI Setup ----------
 spec = load_spec_with_overlay(JSON_PATH, OVERLAY_PATH)
-groups_cfg = spec["ui_groups"]
+if not spec:
+    st.error("Application cannot start due to invalid JSON configuration. Check logs for details.")
+    st.stop()
+
+groups_cfg = spec.get("ui_groups", [])
 groups = {g["id"]: g for g in groups_cfg}
-modules = spec["modules"]
-lookups = spec["lookups"]
+modules = spec.get("modules", [])
+lookups = spec.get("lookups", {})
 
 # Wizard state
 if "step" not in st.session_state:
@@ -217,7 +232,7 @@ if st.session_state.step == 1:
         st.session_state.include_b = False
     else:
         st.session_state.include_b = False
-    state = st.selectbox("State (for cost adjustments)", list(lookups["state_multipliers"].keys()), index=0)
+    state = st.selectbox("State (for cost adjustments)", list(lookups.get("state_multipliers", {}).keys()), index=0)
     st.session_state.inputs["state"] = state
     keep_home = st.radio("Plan for the home?", ["Keep living in it", "Sell it and move"])
     st.session_state.maintain_home_household = keep_home == "Keep living in it"
@@ -246,13 +261,13 @@ elif st.session_state.step == 2:
                 hours = st.slider(f"Hours per day for {name}", 0, 24, 8)
                 st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
             else:
-                room_type = st.selectbox(f"Room type for {name}", list(lookups["room_type"].keys()))
+                room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()))
                 st.session_state.inputs[f"room_type_person_{person}"] = room_type
-            care_level = st.selectbox(f"Care level for {name}", list(lookups["care_level_adders"].keys()))
+            care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()))
             st.session_state.inputs[f"care_level_person_{person}"] = care_level
-            mobility = st.selectbox(f"Mobility needs for {name}", list(lookups["mobility_adders"]["facility"].keys()))
+            mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()))
             st.session_state.inputs[f"mobility_person_{person}"] = mobility
-            chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups["chronic_adders"].keys()))
+            chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()))
             st.session_state.inputs[f"chronic_person_{person}"] = chronic
     if st.button("Next"):
         st.session_state.step = 3
@@ -269,12 +284,12 @@ elif st.session_state.step == 3:
                 if gid not in groups:
                     continue
                 person_label = st.session_state.name_hint.get("A" if "person_a" in gid else "B", "Person")
-                g = groups[gid]
-                with st.expander(f"{g['label'].replace('Person A', person_label).replace('Person B', person_label)}"):
+                g = groups.get(gid)
+                with st.expander(f"{g.get('label', '').replace('Person A', person_label).replace('Person B', person_label)}"):
                     st.caption(g.get("prompt", ""))
                     ans = {}
-                    for f in g["fields"]:
-                        label = f.get("label", f["field"])
+                    for f in g.get("fields", []):
+                        label = f.get("label", f.get("field", ""))
                         kind = f.get("kind", "currency")
                         default = f.get("default", 0)
                         tooltip = f.get("tooltip", "")
