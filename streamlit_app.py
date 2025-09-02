@@ -422,15 +422,13 @@ if st.session_state.step >= 3:
         }
 
     name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
-    # Pull VA tiers from spec (overlay can define them). Fallbacks are editable via overlay.
     va_tiers = spec.get("lookups", {}).get("va_tiers", [
         {"id":"veteran_alone","label":"Veteran (no spouse)","monthly":0},
         {"id":"veteran_with_spouse","label":"Veteran with spouse","monthly":0},
         {"id":"surviving_spouse","label":"Surviving spouse","monthly":0},
-        {"id":"two_veterans_married","label":"Two married veterans","monthly":0}
+        {"id":"two_veterans_married","label":"Two married veterans (both A&A)","monthly":0}
     ])
 
-    # --- Custom helpers for Step 3 rendering ---
     def render_income_fallback_for_person_b():
         st.markdown("#### Income — Spouse/Partner")
         col1, col2, col3 = st.columns(3)
@@ -472,7 +470,6 @@ if st.session_state.step >= 3:
                     ans[f.get("label")] = val
             return ans
 
-    # Sale estimate card (if selling)
     sale_result = None
     if st.session_state.get("home_to_assets", False):
         st.markdown("### Home sale estimate")
@@ -499,19 +496,27 @@ if st.session_state.step >= 3:
             heading = heading.replace("Person A", person_map.get("A","Person A")).replace("Person B", person_map.get("B","Person B"))
         with st.expander(f"{heading} — {g['prompt']}", expanded=False):
             ans = {}
+            # Optional HELOC is now hosted inside Assets group so it appears where users expect it
+            if g["id"] == "group_assets":
+                if keep_home and not st.session_state.get("expect_hecm", False):
+                    st.markdown("**Optional: Access home equity without selling (HELOC)**")
+                    st.caption("Enter an expected **monthly draw** (counts as income) and **monthly payment** (counts as expense).")
+                    st.number_input("HELOC monthly draw (added to income)", min_value=0.0, value=float(st.session_state.get('heloc_draw', 0.0)), step=50.0, format="%.2f", key="heloc_draw")
+                    st.number_input("HELOC monthly payment (adds to expenses)", min_value=0.0, value=float(st.session_state.get('heloc_pay', 0.0)), step=50.0, format="%.2f", key="heloc_pay")
+                if "Home equity" in " ".join([f.get("label","") for f in g["fields"]]):
+                    if keep_home:
+                        st.caption("Home equity is not available here because the plan is to **keep living in the home**. "
+                                   "If you want to access equity without selling, consider a HELOC above.")
+                    elif st.session_state.get("home_to_assets", False):
+                        st.caption("Home equity comes from the **Home sale estimate** above and will be used automatically.")
             for f in g["fields"]:
                 label = f.get("label", f["field"])
                 kind = f.get("kind","currency")
                 default = f.get("default", 0)
-                # Assets special handling
+                # Assets special handling of individual fields
                 if g["id"] == "group_assets":
                     if "Home equity" in label:
-                        if keep_home:
-                            st.caption("Home equity is not available here because the plan is to **keep living in the home**. "
-                                       "If you want to access equity without selling, consider a HELOC below.")
-                            continue
-                        if st.session_state.get("home_to_assets", False):
-                            st.caption("Home equity comes from the **Home sale estimate** above and will be used automatically.")
+                        if keep_home or st.session_state.get("home_to_assets", False):
                             continue
                     if "Other liquid assets" in label:
                         st.caption("Examples: checking/savings, brokerage, CDs, 401k/IRA (spendable portion), cash reserves.")
@@ -530,14 +535,6 @@ if st.session_state.step >= 3:
             st.markdown("### Home financing (reverse mortgage)")
             hecm = st.number_input("Expected monthly reverse mortgage/HECM draw", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="hecm_draw")
             grouped_answers["_hecm_draw"] = {"hecm_draw_monthly": hecm}
-
-        # Optional HELOC inputs when keeping the home
-        if keep_home and not st.session_state.get("expect_hecm", False):
-            st.markdown("### Optional: Access home equity without selling")
-            st.caption("If you plan to use a HELOC/line of credit: enter the expected **monthly draw** and **monthly payment**.")
-            heloc_draw = st.number_input("HELOC monthly draw (added to income)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="heloc_draw")
-            heloc_pay  = st.number_input("HELOC monthly payment (adds to expenses)", min_value=0.0, value=0.0, step=50.0, format="%.2f", key="heloc_pay")
-            grouped_answers["_heloc"] = {"heloc_draw_monthly": heloc_draw, "heloc_payment_monthly": heloc_pay}
 
         # Render categories
         for cat, gids in CATEGORY_MAP.items():
@@ -563,12 +560,13 @@ if st.session_state.step >= 3:
 
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, {k:v for k,v in grouped_answers.items() if not k.startswith("_")}, existing_fields=inputs)
-        # Inject HECM/HELOC & fallback spouse income
+        # Inject HECM & HELOC (from session_state where the widgets now live)
         hecm_draw = grouped_answers.get("_hecm_draw", {}).get("hecm_draw_monthly", 0.0)
         flat_inputs["hecm_draw_monthly"] = float(hecm_draw or 0.0)
-        heloc = grouped_answers.get("_heloc", {})
-        flat_inputs["heloc_draw_monthly"] = float(heloc.get("heloc_draw_monthly", 0.0))
-        flat_inputs["heloc_payment_monthly"] = float(heloc.get("heloc_payment_monthly", 0.0))
+        flat_inputs["heloc_draw_monthly"] = float(st.session_state.get("heloc_draw", 0.0))
+        flat_inputs["heloc_payment_monthly"] = float(st.session_state.get("heloc_pay", 0.0))
+
+        # Fallback spouse income
         if "_income_b_fb" in grouped_answers:
             fb = grouped_answers["_income_b_fb"]
             flat_inputs.setdefault("social_security_person_b", float(fb.get("social_security_person_b", 0.0)))
