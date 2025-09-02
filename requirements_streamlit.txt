@@ -3,3 +3,4 @@ pandas>=2.0.0
 numpy>=1.23.0,<2.1.0
 altair<6
 pyarrow>=7.0
+matplotlib>=3.7.0
