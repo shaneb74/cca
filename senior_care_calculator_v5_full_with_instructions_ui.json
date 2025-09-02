@@ -3,7 +3,7 @@
     "days_per_month": 30,
     "memory_care_multiplier": 1.2,
     "second_person_cost": 1000,
-    "ltc_monthly_add": 2500,
+    "ltc_monthly_add": 3000,
     "display_cap_years_funded": 30
   },
   "lookups": {
