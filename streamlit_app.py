@@ -159,17 +159,19 @@ def compute(spec, inputs):
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
     house_cost_total = home_sum if inputs.get("maintain_home_household") else 0.0
 
-    # VA & LTC flags/amounts are captured in the UI layer
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
+
+    # Add HECM draw (reverse mortgage) into re-investment income if present
+    reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0)
 
     household_income = sum([
         inputs.get("social_security_person_a", 0.0),
         inputs.get("social_security_person_b", 0.0),
         inputs.get("pension_person_a", 0.0),
         inputs.get("pension_person_b", 0.0),
-        inputs.get("re_investment_income", 0.0)
+        reinv
     ]) + va_total + ltc_total
 
     monthly_cost_full = care_cost_total + house_cost_total + optional_sum
@@ -242,13 +244,10 @@ with col1:
     care_recipient = st.text_input("Care recipient's name", value=care_recipient, key="care_recipient")
 with col2:
     planner_name = st.text_input("Your name (planner)", value=(planner_name if who=="Someone else" else ""), key="planner")
-    # Spouse/partner shortcut lives with the planner field so the association is obvious
     if who == "Someone else":
         is_spouse = st.checkbox("I am the spouse/domestic partner of the care recipient", key="is_spouse_partner")
-        # Only set include_b default ONCE; don't force it on every rerun (fixes re-check bug)
         if "include_b" not in st.session_state:
             st.session_state.include_b = bool(is_spouse)
-        # If they check it and we don't have a Person B name yet, seed it from the planner
         if is_spouse and not st.session_state.get("person_b_name"):
             st.session_state.person_b_name = planner_name or "Partner"
 
@@ -281,11 +280,10 @@ if st.session_state.step >= 2:
 
     st.subheader("Spouse / Partner (optional)")
 
-    # Dynamic context when planner is the spouse
     if st.session_state.get("is_spouse_partner", False):
         st.caption(
             f"You're planning for **{care_recipient or 'your spouse'}**. Even if **you** aren't receiving paid care, "
-            "your household costs (mortgage/taxes/insurance/utilities) and any income/benefits affect affordability."
+            "your household costs and any income/benefits affect affordability."
         )
     else:
         st.caption(
@@ -295,7 +293,6 @@ if st.session_state.step >= 2:
             "choose ‘In-Home Care’ if they will receive professional caregiver hours."
         )
 
-    # Respect previous user choice; Step 1 no longer forces this each rerun
     include_b = st.checkbox(
         "Include yourself (as spouse/partner) in this plan?" if st.session_state.get("is_spouse_partner", False)
         else "Include spouse/partner in this plan?",
@@ -305,7 +302,6 @@ if st.session_state.step >= 2:
 
     if include_b:
         inputs["person_b_in_care"] = True
-        # Default Person B name
         default_b = st.session_state.get("person_b_name", "Partner")
         person_b_name = st.text_input("Person B name", value=default_b, key="person_b_name")
         st.subheader(f"{person_b_name or 'Person B'} — Care plan")
@@ -323,6 +319,31 @@ if st.session_state.step >= 2:
         b_has_paid_care = care_b.startswith("In-Home Care") or care_b in [
             "Assisted Living (or Adult Family Home)", "Memory Care"
         ]
+
+        # New: Home strategy when planner is the spouse (or whenever Person B is included)
+        # Only show when Person B is "Stay at Home", since that's the real decision point.
+        if care_b == "Stay at Home (no paid care)":
+            st.markdown("**Home while your partner is in care**")
+            home_strategy = st.radio(
+                "What do you plan to do with the home while care is provided?",
+                ["Keep living in the home (maintain)",
+                 "Sell the home",
+                 "Use a reverse mortgage / HECM"],
+                index=0, key="home_strategy"
+            )
+            st.session_state.home_strategy = home_strategy
+            if home_strategy == "Keep living in the home (maintain)":
+                st.session_state.keep_home = True
+                st.session_state.home_to_assets = False
+                st.session_state.expect_hecm = False
+            elif home_strategy == "Sell the home":
+                st.session_state.keep_home = False
+                st.session_state.home_to_assets = True
+                st.session_state.expect_hecm = False
+            else:
+                st.session_state.keep_home = True
+                st.session_state.home_to_assets = False
+                st.session_state.expect_hecm = True
 
         if care_b.startswith("In-Home Care"):
             inputs["hours_per_day_person_b"] = st.selectbox("Hours/day (B)", ["4","6","8","10","12","24"], index=1, key="hours_b")
@@ -363,13 +384,16 @@ if st.session_state.step >= 2:
 
 st.divider()
 
-# ---------- Step 3 (existing VA logic preserved) ----------
+# ---------- Step 3 ----------
 if st.session_state.step >= 3:
     st.header("Step 3 · Enter financial details")
     st.caption("Open a section to enter details. Leave anything at 0 (or un-checked) if it doesn’t apply.")
 
-    # Maintain-home toggle controls the Home Carry group
-    keep_home = st.checkbox("Maintain current home while in care?", value=False, key="keep_home")
+    # Use derived home strategy instead of a free checkbox
+    keep_home = bool(st.session_state.get("keep_home", False))
+    home_strategy = st.session_state.get("home_strategy")
+    if home_strategy:
+        st.info(f"Home plan: **{home_strategy}**")
     inputs["maintain_home_household"] = keep_home
 
     modules = spec.get("modules")
@@ -407,7 +431,6 @@ if st.session_state.step >= 3:
         heading = g["label"].replace("Person A", person_label).replace("Person B", person_label)
         with st.expander(f"{heading} — {g['prompt']}", expanded=False):
             ans = {}
-            # VA eligibility & designation
             eligible = st.checkbox(f"{person_label}: Qualifies for VA Aid & Attendance?", value=False, key=f"va_elig_{gid}")
             if eligible:
                 choice = st.selectbox(f"{person_label}: VA designation", [t["label"] for t in va_tiers], key=f"va_tier_{gid}")
@@ -424,7 +447,6 @@ if st.session_state.step >= 3:
                         ans[f.get("label")] = 0.0
                         break
 
-            # LTC insurance (boolean)
             for f in g["fields"]:
                 if "LTC insurance" in f.get("label",""):
                     val = st.checkbox(f.get("label"), value=False, key=f"ltc_{gid}")
@@ -435,6 +457,9 @@ if st.session_state.step >= 3:
         g = groups[gid]
         cond = g.get("condition")
         if cond and inputs.get(cond["field"]) != cond.get("equals"):
+            return None
+        # Skip Home Carry if strategy isn't to keep the home
+        if g["id"] == "group_home_carry" and not keep_home:
             return None
         heading = g["label"]
         if person_map:
@@ -455,6 +480,12 @@ if st.session_state.step >= 3:
 
     grouped_answers = {}
     with st.form("finance_form"):
+        # Optional HECM draw quick input (kept outside groups)
+        if st.session_state.get("expect_hecm", False):
+            st.markdown("### Home financing (reverse mortgage)")
+            hecm = st.number_input("Expected monthly reverse mortgage/HECM draw", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="hecm_draw")
+            grouped_answers["_hecm_draw"] = {"hecm_draw_monthly": hecm}
+
         for cat, gids in CATEGORY_MAP.items():
             st.markdown(f"### {cat}")
             for gid in gids:
@@ -473,7 +504,11 @@ if st.session_state.step >= 3:
         submitted = st.form_submit_button("Calculate")
 
     if submitted:
-        flat_inputs = apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=inputs)
+        flat_inputs = apply_ui_group_answers(groups_cfg, {k:v for k,v in grouped_answers.items() if not k.startswith("_")}, existing_fields=inputs)
+        # Inject HECM draw if any
+        hecm_draw = grouped_answers.get("_hecm_draw", {}).get("hecm_draw_monthly", 0.0)
+        flat_inputs["hecm_draw_monthly"] = float(hecm_draw or 0.0)
+        # VA mapping safeguard
         flat_inputs["va_benefit_person_a"] = float(flat_inputs.get("va_benefit_person_a", flat_inputs.get("VA benefit (monthly $)", 0.0)))
         flat_inputs["va_benefit_person_b"] = float(flat_inputs.get("va_benefit_person_b", flat_inputs.get("VA benefit (monthly $) — B", 0.0)))
         res = compute(spec, flat_inputs)
