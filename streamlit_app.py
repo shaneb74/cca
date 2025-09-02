@@ -99,33 +99,39 @@ def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
     return flat
 
 def compute(spec, inputs):
-    settings = spec.get("settings", {})
+    settings = spec.get("settings", {"days_per_month": 30, "memory_care_multiplier": 1.2, 
+                                   "second_person_cost": 1500, "ltc_monthly_add": 2500, 
+                                   "display_cap_years_funded": 30})
     lookups = spec.get("lookups", {})
-    def per_person_cost(person):
+
+    # Helper functions for modularity
+    def calculate_care_cost(person):
         care_type = inputs.get(f"care_type_person_{person}")
         care_level = inputs.get(f"care_level_person_{person}")
         mobility = inputs.get(f"mobility_person_{person}")
         chronic = inputs.get(f"chronic_person_{person}")
+        state_mult = lookups.get("state_multipliers", {}).get(inputs.get("state", "National"), 1.0)
+
         care_level_add = lookups.get("care_level_adders", {}).get(care_level, 0)
         mobility_fac = lookups.get("mobility_adders", {}).get("facility", {}).get(mobility, 0)
         mobility_home = lookups.get("mobility_adders", {}).get("in_home", {}).get(mobility, 0)
         chronic_add = lookups.get("chronic_adders", {}).get(chronic, 0)
-        state_mult = lookups.get("state_multipliers", {}).get(inputs.get("state", "National"), 1.0)
+
         if care_type == "In-Home Care (professional staff such as nurses, CNAs, or aides)":
             hours = str(inputs.get(f"hours_per_day_person_{person}", "0"))
             hourly = lookups.get("in_home_care_matrix", {}).get(hours, 0)
-            in_home_cost = hourly * settings.get("days_per_month", 30) + mobility_home + chronic_add
-            return money(in_home_cost * state_mult)
+            base_cost = hourly * settings["days_per_month"] + mobility_home + chronic_add
         elif care_type in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
             room_type = inputs.get(f"room_type_person_{person}")
             base_room = lookups.get("room_type", {}).get(room_type, 0)
             if care_type == "Memory Care":
-                base_room *= settings.get("memory_care_multiplier", 1.2)
-            facility_cost = base_room + care_level_add + mobility_fac + chronic_add
-            return money(facility_cost * state_mult)
-        return 0.0
+                base_room *= settings["memory_care_multiplier"]
+            base_cost = base_room + care_level_add + mobility_fac + chronic_add
+        else:
+            base_cost = 0.0
+        return money(base_cost * state_mult)
 
-    def shared_unit_adjustment():
+    def calculate_shared_adjustment():
         if not (inputs.get("person_a_in_care") and inputs.get("person_b_in_care")):
             return 0.0
         if not inputs.get("share_one_unit"):
@@ -134,57 +140,72 @@ def compute(spec, inputs):
         b_type = inputs.get("care_type_person_b")
         facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
         if (a_type in facility_types) and (b_type in facility_types):
-            room_type_b = inputs.get(f"room_type_person_b")
+            room_type_b = inputs.get("room_type_person_b")
             room_base_b = lookups.get("room_type", {}).get(room_type_b, 0)
             if b_type == "Memory Care":
-                room_base_b *= settings.get("memory_care_multiplier", 1.2)
-            return money(room_base_b - settings.get("second_person_cost", 1500))
+                room_base_b *= settings["memory_care_multiplier"]
+            return money(room_base_b - settings["second_person_cost"])
         return 0.0
 
-    a_selected = per_person_cost("a") if inputs.get("person_a_in_care") else 0.0
-    b_selected = per_person_cost("b") if inputs.get("person_b_in_care") else 0.0
-    shared_adj = shared_unit_adjustment()
-    care_cost_total = money(a_selected + b_selected - shared_adj)
-    optional_fields = ["optional_rx","optional_personal_care","optional_phone_internet","optional_life_insurance",
-                       "optional_transportation","optional_family_travel","optional_auto","optional_auto_insurance",
-                       "optional_other","heloc_payment_monthly", "medicare_premiums", "dental_vision_hearing",
-                       "home_modifications_monthly", "other_debts_monthly", "pet_care", "entertainment_hobbies"]
-    optional_sum = sum(inputs.get(k, 0.0) for k in optional_fields)
-    home_fields = ["mortgage","taxes","insurance","hoa","utilities"]
-    home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
-    house_cost_total = home_sum if inputs.get("maintain_home_household") else 0.0
-    va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
-    ltc_total = (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
-                (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
-    reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0) + inputs.get("heloc_draw_monthly", 0.0)
-    investment_returns = inputs.get("other_assets", 0.0) * (inputs.get("investment_return_rate", 0.04) / 12)
-    reinv += investment_returns
-    household_income = sum([
-        inputs.get("social_security_person_a", 0.0),
-        inputs.get("social_security_person_b", 0.0),
-        inputs.get("pension_person_a", 0.0),
-        inputs.get("pension_person_b", 0.0),
-        reinv
-    ]) + va_total + ltc_total
-    tax_rate = inputs.get("estimated_tax_rate", 0.15)
-    household_income_after_tax = household_income * (1 - tax_rate)
-    monthly_cost_full = care_cost_total + house_cost_total + optional_sum
-    monthly_gap = max(0.0, monthly_cost_full - household_income_after_tax)
-    total_assets = inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0)
+    def calculate_optional_costs():
+        optional_fields = ["optional_rx", "optional_personal_care", "optional_phone_internet", "optional_life_insurance",
+                          "optional_transportation", "optional_family_travel", "optional_auto", "optional_auto_insurance",
+                          "optional_other", "heloc_payment_monthly", "medicare_premiums", "dental_vision_hearing",
+                          "home_modifications_monthly", "other_debts_monthly", "pet_care", "entertainment_hobbies"]
+        return money(sum(inputs.get(k, 0.0) for k in optional_fields))
+
+    def calculate_home_costs():
+        home_fields = ["mortgage", "taxes", "insurance", "hoa", "utilities"]
+        return money(sum(inputs.get(k, 0.0) for k in home_fields)) if inputs.get("maintain_home_household") else 0.0
+
+    def calculate_income():
+        income_sources = [
+            inputs.get("social_security_person_a", 0.0),
+            inputs.get("social_security_person_b", 0.0),
+            inputs.get("pension_person_a", 0.0),
+            inputs.get("pension_person_b", 0.0),
+            inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0) + inputs.get("heloc_draw_monthly", 0.0)
+        ]
+        reinvestment_returns = inputs.get("other_assets", 0.0) * (inputs.get("investment_return_rate", 0.04) / 12)
+        va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
+        ltc_total = (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
+                    (settings.get("ltc_monthly_add", 2500) if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
+        total_income = sum(income_sources) + reinvestment_returns + va_total + ltc_total
+        tax_rate = inputs.get("estimated_tax_rate", 0.15)
+        return money(total_income * (1 - tax_rate))
+
+    # Main computation
+    care_cost_a = calculate_care_cost("a") if inputs.get("person_a_in_care") else 0.0
+    care_cost_b = calculate_care_cost("b") if inputs.get("person_b_in_care") else 0.0
+    shared_adj = calculate_shared_adjustment()
+    care_cost_total = money(care_cost_a + care_cost_b - shared_adj)
+    optional_sum = calculate_optional_costs()
+    house_cost_total = calculate_home_costs()
+    household_income = calculate_income()
+    monthly_cost_full = money(care_cost_total + house_cost_total + optional_sum)
+    monthly_gap = max(0.0, monthly_cost_full - household_income)
+
+    # Assets and years funded with inflation
+    total_assets = money(inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0))
     inflation_rate = inputs.get("inflation_rate", 0.03)
     if monthly_gap <= 0:
         display_years = settings.get("display_cap_years_funded", 30)
     else:
         if inflation_rate > 0:
+            # Compound inflation adjustment over time
+            monthly_inflation_rate = (1 + inflation_rate) ** (1/12) - 1
+            effective_rate = (inputs.get("investment_return_rate", 0.04) / 12) - monthly_inflation_rate
             years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
-            years_funded /= (1 + inflation_rate)
+            if effective_rate > 0:
+                years_funded /= (1 + monthly_inflation_rate)  # Simplified compounding effect
         else:
             years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
         display_years = min(years_funded, settings.get("display_cap_years_funded", 30))
+
     return {
         "monthly_cost": monthly_cost_full,
         "monthly_gap": monthly_gap,
-        "household_income": household_income_after_tax,
+        "household_income": household_income,
         "total_assets": total_assets,
         "years_funded_cap30": display_years if display_years != float("inf") else None,
         "care_cost_total": care_cost_total,
@@ -234,7 +255,7 @@ if st.session_state.step == 1:
     home_plan = st.radio("Do you plan to use the sale of the home or home equity to pay for care?", ["No, keep the home without using equity", "Yes, sell the home", "Yes, use reverse mortgage (HECM)", "Yes, use home equity line of credit (HELOC)"])
     st.session_state.maintain_home_household = home_plan != "Yes, sell the home"
     st.session_state.home_to_assets = home_plan == "Yes, sell the home"
-    st.session_state.home_plan = home_plan  # Save for potential logic in Step 3 (e.g., show HECM/HELOC fields)
+    st.session_state.home_plan = home_plan  # Save for potential logic (e.g., HECM/HELOC fields)
     if st.button("Next"):
         st.session_state.step = 2
 
@@ -254,21 +275,22 @@ elif st.session_state.step == 2:
         for person, in_care in [("a", person_a_in_care), ("b", person_b_in_care)]:
             if in_care:
                 name = st.session_state.name_hint["A" if person == "a" else "B"]
-                st.subheader(f"Care for {name}")
-                care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"], key=f"care_type_person_{person}")
-                st.session_state.inputs[f"care_type_person_{person}"] = care_type
-                if "In-Home" in care_type:
-                    hours = st.slider(f"Hours per day for {name}", 0, 24, 8, key=f"hours_per_day_person_{person}")
-                    st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
-                else:
-                    room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()), key=f"room_type_person_{person}")
-                    st.session_state.inputs[f"room_type_person_{person}"] = room_type
-                care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()), key=f"care_level_person_{person}")
-                st.session_state.inputs[f"care_level_person_{person}"] = care_level
-                mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()), key=f"mobility_person_{person}")
-                st.session_state.inputs[f"mobility_person_{person}"] = mobility
-                chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()), key=f"chronic_person_{person}")
-                st.session_state.inputs[f"chronic_person_{person}"] = chronic
+                with st.container():
+                    st.subheader(f"Care for {name}")
+                    care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"], key=f"care_type_person_{person}")
+                    st.session_state.inputs[f"care_type_person_{person}"] = care_type
+                    if "In-Home" in care_type:
+                        hours = st.slider(f"Hours per day for {name}", 0, 24, 8, key=f"hours_per_day_person_{person}")
+                        st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
+                    else:
+                        room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()), key=f"room_type_person_{person}")
+                        st.session_state.inputs[f"room_type_person_{person}"] = room_type
+                    care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()), key=f"care_level_person_{person}")
+                    st.session_state.inputs[f"care_level_person_{person}"] = care_level
+                    mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()), key=f"mobility_person_{person}")
+                    st.session_state.inputs[f"mobility_person_{person}"] = mobility
+                    chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()), key=f"chronic_person_{person}")
+                    st.session_state.inputs[f"chronic_person_{person}"] = chronic
         submitted_step2 = st.form_submit_button("Next")
     if submitted_step2:
         st.session_state.step = 3
@@ -297,23 +319,34 @@ elif st.session_state.step == 3:
                         if tooltip:
                             st.caption(tooltip)
                         if kind == "boolean":
-                            v = st.checkbox(label, value=default == "Yes")
+                            v = st.checkbox(label, value=default == "Yes", key=f"checkbox_{gid}_{label}")
                             ans[label] = v
                         elif kind == "select":
-                            v = st.selectbox(label, f.get("options", []))
+                            v = st.selectbox(label, f.get("options", []), key=f"select_{gid}_{label}")
                             ans[label] = v
                         else:
-                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
+                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"number_{gid}_{label}")
                             ans[label] = v
+                    # Enhanced VA benefits wizard
+                    if gid.startswith("group_benefits"):
+                        va_tiers = lookups.get("va_tiers", [])
+                        tier_options = [t["label"] for t in va_tiers]
+                        selected_tier = st.selectbox("Select your VA benefit situation", ["Not applicable"] + tier_options, key=f"va_tier_{gid}")
+                        if selected_tier != "Not applicable":
+                            selected_tier_data = next((t for t in va_tiers if t["label"] == selected_tier), {"monthly": 0})
+                            monthly_benefit = selected_tier_data.get("monthly", 0)
+                            st.caption(f"Estimated monthly VA benefit: ${monthly_benefit:,.2f}. Check with VA for eligibility and exact amount.")
+                            va_field = "va_benefit_person_a" if "a" in gid else "va_benefit_person_b"
+                            ans[va_field] = monthly_benefit
                     st.session_state.grouped_answers[gid] = ans
         st.subheader("Advanced Adjustments")
-        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0) / 100
+        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0, key="inflation_rate") / 100
         st.session_state.inputs["inflation_rate"] = inflation_rate
-        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0) / 100
+        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0, key="investment_return_rate") / 100
         st.session_state.inputs["investment_return_rate"] = investment_return_rate
-        estimated_tax_rate = st.slider("Estimated tax rate on income (%)", 0.0, 30.0, 15.0) / 100
+        estimated_tax_rate = st.slider("Estimated tax rate on income (%)", 0.0, 30.0, 15.0, key="estimated_tax_rate") / 100
         st.session_state.inputs["estimated_tax_rate"] = estimated_tax_rate
-        submitted = st.form_submit_button("Calculate")
+        submitted = st.form_submit_button("Calculate", key="submit_step3")
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, st.session_state.grouped_answers, st.session_state.inputs)
         res = compute(spec, flat_inputs)
@@ -333,7 +366,7 @@ elif st.session_state.step == 4:
         st.metric("Monthly Gap", f"${res['monthly_gap']:,.2f}")
     st.metric("Total Assets", f"${res['total_assets']:,.2f}")
     st.metric("Estimated Years Funded (with inflation, cap 30)", res['years_funded_cap30'] or "N/A")
-    if st.button("Restart"):
+    if st.button("Restart", key="restart"):
         st.session_state.step = 1
         st.session_state.inputs = {}
         st.session_state.grouped_answers = {}

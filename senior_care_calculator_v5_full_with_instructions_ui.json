@@ -44,24 +44,29 @@
     },
     "va_tiers": [
       {
+        "id": "not_applicable",
+        "label": "Not applicable",
+        "monthly": 0
+      },
+      {
         "id": "veteran_alone",
         "label": "Veteran (no spouse)",
-        "monthly": 0
+        "monthly": 2154
       },
       {
         "id": "veteran_with_spouse",
         "label": "Veteran with spouse",
-        "monthly": 0
+        "monthly": 2703
       },
       {
         "id": "surviving_spouse",
         "label": "Surviving spouse",
-        "monthly": 0
+        "monthly": 1382
       },
       {
         "id": "two_veterans_married",
         "label": "Two married veterans",
-        "monthly": 0
+        "monthly": 2865
       }
     ],
     "state_multipliers": {
@@ -75,25 +80,17 @@
     "q1_who": {
       "id": "who_planning_for",
       "label": "Who are you planning care for?",
-      "type": "select",
-      "options": [
-        "Myself",
-        "Someone else"
-      ]
+      "type": "radio",
+      "options": ["Myself", "Spouse or Partner", "Parent or Loved One", "A Couple (both parents)"]
     },
     "q2_relationship": {
       "id": "relationship_to_person",
       "label": "What is your relationship to the person you're planning care for?",
       "type": "select",
-      "options": [
-        "Spouse / Partner",
-        "Parent / Parent-in-law",
-        "Other relative / POA",
-        "Friend / Other"
-      ],
+      "options": ["Spouse / Partner", "Parent / Parent-in-law", "Other relative / POA", "Friend / Other"],
       "condition": {
         "field": "who_planning_for",
-        "equals": "Someone else"
+        "equals": "Parent or Loved One"
       }
     },
     "q3_names": {
@@ -110,7 +107,7 @@
           "kind": "text",
           "condition": {
             "field": "who_planning_for",
-            "equals": "Someone else"
+            "equals": "Parent or Loved One"
           }
         }
       ]
@@ -121,7 +118,7 @@
     {
       "id": "group_income_person_a",
       "label": "Income — Person A",
-      "prompt": "What are the monthly income sources for this person? (e.g., Social Security, pensions).",
+      "prompt": "What are the monthly income sources for this person?",
       "fields": [
         {
           "field": "social_security_person_a",
@@ -177,13 +174,6 @@
       "prompt": "Any VA benefits or long-term care insurance?",
       "fields": [
         {
-          "field": "va_benefit_person_a",
-          "label": "VA Benefit (monthly)",
-          "kind": "currency",
-          "default": 0,
-          "tooltip": "Veterans Affairs aid and attendance benefit."
-        },
-        {
           "field": "ltc_insurance_person_a",
           "label": "Has Long-Term Care Insurance?",
           "kind": "boolean",
@@ -203,12 +193,6 @@
         "equals": true
       },
       "fields": [
-        {
-          "field": "va_benefit_person_b",
-          "label": "VA Benefit (monthly)",
-          "kind": "currency",
-          "default": 0
-        },
         {
           "field": "ltc_insurance_person_b",
           "label": "Has Long-Term Care Insurance?",
@@ -333,13 +317,15 @@
           "field": "medicare_premiums",
           "label": "Medicare/Medigap Premiums",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Monthly out-of-pocket costs for Medicare or Medigap plans."
         },
         {
           "field": "dental_vision_hearing",
           "label": "Dental/Vision/Hearing",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Costs for dental, vision, or hearing aids not covered by insurance."
         }
       ],
       "module": "healthcare"
@@ -347,7 +333,7 @@
     {
       "id": "group_home_mods",
       "label": "Home Modifications",
-      "prompt": "If staying home, costs for safety updates.",
+      "prompt": "Costs for safety updates if staying home.",
       "condition": {
         "field": "maintain_home_household",
         "equals": true
@@ -357,7 +343,8 @@
           "field": "home_modifications_monthly",
           "label": "Monthly Cost (e.g., financed ramps/grab bars)",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Estimated monthly payment for home modifications like ramps or grab bars."
         }
       ],
       "module": "house_carry"
@@ -371,7 +358,8 @@
           "field": "other_debts_monthly",
           "label": "Loans/Credit Cards",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Monthly payments for loans or credit card debt."
         }
       ],
       "module": "debts"
@@ -385,13 +373,15 @@
           "field": "pet_care",
           "label": "Pet Care (food/vet)",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Monthly costs for pet food, vet visits, or care."
         },
         {
           "field": "entertainment_hobbies",
           "label": "Entertainment/Hobbies",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Expenses for entertainment or hobbies."
         }
       ],
       "module": "optional_costs"
@@ -405,14 +395,41 @@
           "field": "home_equity",
           "label": "Home Equity (if selling)",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "condition": {
+            "field": "home_to_assets",
+            "equals": true
+          },
+          "tooltip": "Value of home equity available if sold."
         },
         {
           "field": "other_assets",
           "label": "Savings/Investments",
           "kind": "currency",
           "default": 0,
-          "tooltip": "Liquid assets like 401k, savings."
+          "tooltip": "Liquid assets like savings, 401k, or investments."
+        },
+        {
+          "field": "hecm_draw_monthly",
+          "label": "Reverse Mortgage (HECM) Monthly Draw",
+          "kind": "currency",
+          "default": 0,
+          "condition": {
+            "field": "home_plan",
+            "equals": "Yes, use reverse mortgage (HECM)"
+          },
+          "tooltip": "Monthly amount drawn from a reverse mortgage."
+        },
+        {
+          "field": "heloc_payment_monthly",
+          "label": "HELOC Monthly Payment",
+          "kind": "currency",
+          "default": 0,
+          "condition": {
+            "field": "home_plan",
+            "equals": "Yes, use home equity line of credit (HELOC)"
+          },
+          "tooltip": "Monthly payment for a home equity line of credit."
         }
       ],
       "module": "assets"
@@ -461,7 +478,7 @@
   ],
   "ui_contract": {
     "modules": "Render sections step-by-step; use tooltips for explanations.",
-    "groups": "Group fields intuitively with captions.",
+    "groups": "Group fields intuitively with captions; respect conditions.",
     "intro_flow": "Used for Step 1."
   },
   "category_map": {
