@@ -243,40 +243,40 @@ if st.session_state.step == 1:
 # Step 2: Care Needs
 elif st.session_state.step == 2:
     st.header("Step 2: Care Needs")
-    person_a_in_care = st.checkbox(f"Does {st.session_state.name_hint['A']} need care?", value=True)
+    person_a_in_care = st.checkbox(f"Does {st.session_state.name_hint['A']} need care?", value=True, key="person_a_in_care")
     st.session_state.inputs["person_a_in_care"] = person_a_in_care
     person_b_in_care = False  # Default to False if include_b is False
     if st.session_state.get("include_b", False):
-        person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?")
+        person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?", key="person_b_in_care")
     st.session_state.inputs["person_b_in_care"] = person_b_in_care
     if person_a_in_care or person_b_in_care:
-        share_unit = st.checkbox("Will they share a unit/room if in facility care?")
+        share_unit = st.checkbox("Will they share a unit/room if in facility care?", key="share_unit")
         st.session_state.inputs["share_one_unit"] = share_unit
     for person, in_care in [("a", person_a_in_care), ("b", person_b_in_care)]:
         if in_care:
             name = st.session_state.name_hint["A" if person == "a" else "B"]
             st.subheader(f"Care for {name}")
-            care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"])
+            care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"], key=f"care_type_{person}")
             st.session_state.inputs[f"care_type_person_{person}"] = care_type
             if "In-Home" in care_type:
-                hours = st.slider(f"Hours per day for {name}", 0, 24, 8)
+                hours = st.slider(f"Hours per day for {name}", 0, 24, 8, key=f"hours_per_day_{person}")
                 st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
             else:
-                room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()))
+                room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()), key=f"room_type_{person}")
                 st.session_state.inputs[f"room_type_person_{person}"] = room_type
-            care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()))
+            care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()), key=f"care_level_{person}")
             st.session_state.inputs[f"care_level_person_{person}"] = care_level
-            mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()))
+            mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()), key=f"mobility_{person}")
             st.session_state.inputs[f"mobility_person_{person}"] = mobility
-            chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()))
+            chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()), key=f"chronic_{person}")
             st.session_state.inputs[f"chronic_person_{person}"] = chronic
-    if st.button("Next"):
+    if st.button("Next", key="next_step_2"):
         st.session_state.step = 3
 
 # Step 3: Financials
 elif st.session_state.step == 3:
     st.header("Step 3: Financial Details")
-    with st.form("finance_form"):
+    with st.form(key="finance_form"):
         for cat, gids in spec.get("category_map", {}).items():
             st.markdown(f"### {cat}")
             for gid in gids:
@@ -289,29 +289,30 @@ elif st.session_state.step == 3:
                 with st.expander(f"{g.get('label', '').replace('Person A', person_label).replace('Person B', person_label)}"):
                     st.caption(g.get("prompt", ""))
                     ans = {}
-                    for f in g.get("fields", []):
+                    for i, f in enumerate(g.get("fields", [])):
                         label = f.get("label", f.get("field", ""))
                         kind = f.get("kind", "currency")
                         default = f.get("default", 0)
                         tooltip = f.get("tooltip", "")
                         if tooltip:
                             st.caption(tooltip)
+                        key = f"{gid}_{label}_{i}"
                         if kind == "boolean":
-                            v = st.checkbox(label, value=default == "Yes")
+                            v = st.checkbox(label, value=default == "Yes", key=key)
                             ans[label] = v
                         elif kind == "select":
-                            v = st.selectbox(label, f.get("options", []))
+                            v = st.selectbox(label, f.get("options", []), key=key)
                             ans[label] = v
                         else:
-                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
+                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=key)
                             ans[label] = v
                     st.session_state.grouped_answers[gid] = ans
         st.subheader("Advanced Adjustments")
-        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0) / 100
+        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0, key="inflation_rate") / 100
         st.session_state.inputs["inflation_rate"] = inflation_rate
-        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0) / 100
+        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0, key="investment_return_rate") / 100
         st.session_state.inputs["investment_return_rate"] = investment_return_rate
-        estimated_tax_rate = st.slider("Tax rate on income (%)", 0.0, 30.0, 15.0) / 100
+        estimated_tax_rate = st.slider("Tax rate on income (%)", 0.0, 30.0, 15.0, key="estimated_tax_rate") / 100
         st.session_state.inputs["estimated_tax_rate"] = estimated_tax_rate
         submitted = st.form_submit_button("Calculate")
     if submitted:
@@ -333,7 +334,7 @@ elif st.session_state.step == 4:
         st.metric("Monthly Gap", f"${res['monthly_gap']:,.2f}")
     st.metric("Total Assets", f"${res['total_assets']:,.2f}")
     st.metric("Years Funded (cap 30)", res['years_funded_cap30'] or "N/A")
-    if st.button("Restart"):
+    if st.button("Restart", key="restart"):
         st.session_state.step = 1
         st.session_state.inputs = {}
         st.session_state.grouped_answers = {}
