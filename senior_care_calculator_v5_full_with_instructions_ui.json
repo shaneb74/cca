@@ -21,14 +21,18 @@
       "2 Bedroom": 7000
     },
     "care_level_adders": {
-      "Low": 0,
-      "tooltip": "Basic assistance with daily tasks like bathing or dressing."
-    },
-    "Medium": 800,
-    "tooltip": "Moderate help with mobility, hygiene, or medication management."
-    },
-    "High": 1600,
-    "tooltip": "Extensive care for complex needs like dementia or full dependency."
+      "Low": {
+        "value": 0,
+        "tooltip": "Basic assistance with daily tasks like bathing or dressing."
+      },
+      "Medium": {
+        "value": 800,
+        "tooltip": "Moderate help with mobility, hygiene, or medication management."
+      },
+      "High": {
+        "value": 1600,
+        "tooltip": "Extensive care for complex needs like dementia or full dependency."
+      }
     },
     "mobility_adders": {
       "facility": {
