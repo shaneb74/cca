@@ -208,8 +208,6 @@ if st.session_state.step >= 2:
     st.subheader("Spouse / Partner (optional)")
     st.caption("Even if your spouse/partner isn’t receiving paid care, keeping the home (mortgage/taxes/insurance/utilities) can affect how affordable your care is. Add them to account for household costs.")
     include_b = st.checkbox("Include spouse/partner in this plan?", value=include_b_state, key="include_b")
-    st.session_state.include_b = include_b
-
     if include_b:
         inputs["person_b_in_care"] = True
         person_b_name = st.text_input("Person B name", value=person_b_name, key="person_b_name")
