@@ -1,1 +1,1 @@
-streamlit>=1.35.0
+streamlit>=1.35.0 python-decimal>=1.1.0
