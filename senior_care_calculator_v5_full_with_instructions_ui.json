@@ -2,7 +2,7 @@
   "settings": {
     "days_per_month": 30,
     "memory_care_multiplier": 1.2,
-    "second_person_cost": 1500,
+    "second_person_cost": 1000,
     "ltc_monthly_add": 2500,
     "display_cap_years_funded": 30
   },
@@ -26,10 +26,10 @@
     },
     "Medium": 800,
     "tooltip": "Moderate help with mobility, hygiene, or medication management."
-  },
-  "High": 1600,
-  "tooltip": "Extensive care for complex needs like dementia or full dependency."
-},
+    },
+    "High": 1600,
+    "tooltip": "Extensive care for complex needs like dementia or full dependency."
+    },
     "mobility_adders": {
       "facility": {
         "None": 0,
