@@ -57,7 +57,7 @@
           "skip_value": 0,
           "kind": "currency"
         },
-        "LTC insurance": {
+        "LTC insurance \u2014 A": {
           "optional": true,
           "skip_value": "No",
           "kind": "boolean"
@@ -110,6 +110,6 @@
   "ui_contract": {
     "modules": "Render a checkbox per module; only render groups for modules that are checked; respect module.condition if present.",
     "groups": "Within each rendered group, show an 'Include' checkbox for each field. If not included, write field.skip_value.",
-    "merge_instructions": "To apply this overlay: for each ui_groups[i], if ui_group_overrides contains its id, set group.module accordingly and update each field with overrides (use '*' key as default for any field not explicitly named). Also add the top-level 'modules' array."
+    "merge_instructions": "For each ui_group, if an override exists, apply group.module and field overrides; add top-level modules."
   }
 }
