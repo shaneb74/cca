@@ -245,9 +245,10 @@ elif st.session_state.step == 2:
     st.header("Step 2: Care Needs")
     person_a_in_care = st.checkbox(f"Does {st.session_state.name_hint['A']} need care?", value=True)
     st.session_state.inputs["person_a_in_care"] = person_a_in_care
+    person_b_in_care = False  # Default to False if include_b is False
     if st.session_state.get("include_b", False):
         person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?")
-        st.session_state.inputs["person_b_in_care"] = person_b_in_care
+    st.session_state.inputs["person_b_in_care"] = person_b_in_care
     if person_a_in_care or person_b_in_care:
         share_unit = st.checkbox("Will they share a unit/room if in facility care?")
         st.session_state.inputs["share_one_unit"] = share_unit
