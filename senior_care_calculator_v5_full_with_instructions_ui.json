@@ -1,535 +1,402 @@
 {
-  "calculator_project": "Senior Care Cost Calculator",
-  "version": "v5-full-expansion-2025-09-02",
-  "_comment_version": "Fully expanded flows for Myself, Someone else, and Two-person planning. Includes care_only and full_household modes, VA logic scoped to recipients, shared-unit rules, and simulation vs end-user outputs.",
-  "features": {
-    "flow_mode": "care_only",
-    "simulation_mode": true
-  },
-  "_comment_features": "flow_mode controls question branches. simulation_mode toggles visibility of debug results only.",
   "settings": {
-    "currency": "USD",
-    "days_per_month": 20,
+    "days_per_month": 30,
     "memory_care_multiplier": 1.2,
-    "second_person_cost": 1000,
-    "display_cap_years_funded": 30,
-    "va_asset_threshold": 159000,
-    "ltc_monthly_add": 3000
+    "second_person_cost": 1500,
+    "ltc_monthly_add": 2500,
+    "display_cap_years_funded": 30
   },
-  "_comment_settings": "second_person_cost applies when BOTH enter the same AL/MC unit and choose to share one unit; care level/mobility/chronic still apply to both.",
   "lookups": {
+    "in_home_care_matrix": {
+      "4": 160,
+      "6": 240,
+      "8": 320,
+      "10": 400,
+      "12": 480,
+      "24": 900
+    },
     "room_type": {
-      "Studio": 4000,
+      "Studio": 4500,
       "1 Bedroom": 5500,
       "2 Bedroom": 7000
     },
     "care_level_adders": {
-      "None": 0,
-      "Low": 1000,
-      "Medium": 3000,
-      "High": 6000
+      "Low": 0,
+      "Medium": 800,
+      "High": 1600
     },
     "mobility_adders": {
       "facility": {
         "None": 0,
-        "Walker": 200,
-        "Wheelchair": 1000
+        "Walker": 250,
+        "Wheelchair": 500
       },
       "in_home": {
         "None": 0,
-        "Walker": 600,
-        "Wheelchair": 3000
+        "Walker": 150,
+        "Wheelchair": 300
       }
     },
     "chronic_adders": {
       "None": 0,
-      "Some conditions (manageable)": 200,
-      "Significant conditions (regular care)": 600
-    },
-    "in_home_care_matrix": {
-      "0": 0,
-      "1": 41.67,
-      "2": 83.34,
-      "3": 125.01,
-      "4": 166.68,
-      "5": 208.35,
-      "6": 250.02,
-      "7": 291.69,
-      "8": 333.36,
-      "9": 375.03,
-      "10": 416.7,
-      "11": 458.37,
-      "12": 500.04,
-      "13": 541.71,
-      "14": 583.38,
-      "15": 625.05,
-      "16": 666.72,
-      "17": 708.39,
-      "18": 750.06,
-      "19": 791.73,
-      "20": 833.4,
-      "21": 875.07,
-      "22": 916.74,
-      "23": 958.41,
-      "24": 1000.08
+      "Some conditions (manageable)": 300,
+      "Multiple conditions (complex)": 700
     }
   },
-  "ui_guidance": {
-    "badges": {
-      "care_only": "Care costs only",
-      "full_household": "Care + household"
-    },
-    "input_type": "numeric with steppers",
-    "steps": {
-      "other_assets": 10000,
-      "home_equity": 25000,
-      "pension_person_a": 100,
-      "pension_person_b": 100,
-      "re_investment_income": 100,
-      "mortgage": 100,
-      "taxes": 100,
-      "insurance": 50,
-      "hoa": 50,
-      "utilities": 25,
-      "optional_rx": 25,
-      "optional_personal_care": 25,
-      "optional_phone_internet": 25,
-      "optional_life_insurance": 25,
-      "optional_transportation": 25,
-      "optional_family_travel": 50,
-      "optional_auto": 100,
-      "optional_auto_insurance": 25,
-      "optional_other": 25
-    },
-    "ranges": {
-      "social_security_*": [0, 6000],
-      "pension_*": [0, 10000],
-      "re_investment_income": [0, 20000],
-      "mortgage": [0, 20000],
-      "taxes": [0, 5000],
-      "insurance": [0, 2000],
-      "hoa": [0, 2000],
-      "utilities": [0, 2000],
-      "optional_*": [0, 5000]
-    },
-    "results": {
-      "end_user": {
-        "care_only": {
-          "fields": ["care_cost_total"],
-          "labels": {"care_cost_total": "Estimated monthly care cost"},
-          "show_breakdown_tables": false
-        },
-        "full_household": {
-          "fields": ["monthly_cost", "household_income", "monthly_gap", "display_years", "total_assets"],
-          "show_breakdown_tables": false
-        }
-      },
-      "simulation_mode": {
-        "care_only": {
-          "fields": ["care_breakdown", "care_cost_total"],
-          "show_breakdown_tables": true
-        },
-        "full_household": {
-          "fields": ["care_breakdown", "home_carry_breakdown", "optional_costs_breakdown", "monthly_cost", "household_income", "monthly_gap", "display_years", "total_assets"],
-          "show_breakdown_tables": true
-        }
-      }
-    }
-  },
-  "user_flow": {
-    "entry_mode": {
-      "section": "start",
-      "prompt": "What would you like to calculate today?",
-      "type": "single_select",
+  "intro_flow": {
+    "q1_who": {
+      "id": "who_planning_for",
+      "label": "Who are you planning care for?",
+      "type": "select",
       "options": [
-        "Care costs only (quick estimate)",
-        "Comprehensive financial assessment (care + household costs and assets)"
-      ],
-      "branches": {
-        "Care costs only (quick estimate)": {
-          "set": {"features.flow_mode": "care_only"},
-          "next": "initial_question"
-        },
-        "Comprehensive financial assessment (care + household costs and assets)": {
-          "set": {"features.flow_mode": "full_household"},
-          "next": "initial_question"
-        }
-      }
+        "Myself",
+        "Someone else"
+      ]
     },
-    "initial_question": {
-      "section": "start",
-      "prompt": "Who are you planning care for?",
-      "type": "single_select",
-      "options": ["Myself", "Someone else"],
-      "branches": {
-        "Myself": {"set": {"audience": "self"}, "next": "single_person_name_router"},
-        "Someone else": {"set": {"audience": "proxy"}, "next": "relationship_clarifier"}
-      }
-    },
-    "relationship_clarifier": {
-      "section": "start",
-      "field": "relationship_type",
-      "prompt": "What is your relationship to the person you're planning care for?",
-      "type": "single_select",
-      "options": ["Spouse / Partner", "Parent / Parent-in-law", "Other relative / POA", "Friend / Other"],
-      "branches": {
-        "Spouse / Partner": {"next": "two_person_names_spousal"},
-        "Parent / Parent-in-law": {"next": "two_person_names_parent"},
-        "Other relative / POA": {"next": "single_person_name_router"},
-        "Friend / Other": {"next": "single_person_name_router"}
-      }
-    },
-    "single_person_name_router": {
-      "section": "start",
-      "field": "person_a_name",
-      "prompt": {"self": "What is your name?", "proxy": "What is the care recipient's name?"},
-      "type": "text",
-      "next": "care_selection_single_or_two"
-    },
-    "two_person_names_spousal": {
-      "section": "start",
-      "prompts": [
-        {"field": "person_a_name", "prompt": "What is your spouse/partner's name?", "type": "text"},
-        {"field": "person_b_name", "prompt": "What is your name?", "type": "text"}
-      ],
-      "next": "care_selection_two_names"
-    },
-    "two_person_names_parent": {
-      "section": "start",
-      "prompts": [
-        {"field": "person_a_name", "prompt": "What is your parent's name?", "type": "text"},
-        {"field": "person_b_name", "prompt": "What is their partner/spouse's name? (type None if not applicable)", "type": "text"}
-      ],
-      "next": "care_selection_two_names"
-    },
-    "care_selection_single_or_two": {
-      "section": "care_needs",
-      "question": "Who needs a new senior living option?",
-      "type": "single_select",
-      "options": ["[person_a_name]"],
-      "branches": {
-        "[person_a_name]": {"set": {"person_a_in_care": true}, "next": "care_type_detail_person_a"}
-      }
-    },
-    "care_selection_two_names": {
-      "section": "care_needs",
-      "question": "Who needs a new senior living option?",
-      "type": "single_select",
-      "options": ["[person_a_name]", "[person_b_name]", "Both ([person_a_name] and [person_b_name])"],
-      "branches": {
-        "[person_a_name]": {"set": {"person_a_in_care": true}, "next": "care_type_detail_person_a"},
-        "[person_b_name]": {"set": {"person_b_in_care": true}, "next": "care_type_detail_person_b"},
-        "Both ([person_a_name] and [person_b_name])": {
-          "set": {"person_a_in_care": true, "person_b_in_care": true},
-          "next": "care_type_detail_person_a"
-        }
-      }
-    },
-    "care_type_detail_person_a": {
-      "section": "care_needs",
-      "field": "care_type_person_a",
-      "prompt": "What type of senior living care is being considered for [person_a_name]?",
-      "type": "single_select",
+    "q2_relationship": {
+      "id": "relationship_to_person",
+      "label": "What is your relationship to the person you're planning care for?",
+      "type": "select",
       "options": [
-        "Assisted Living (or Adult Family Home)",
-        "Memory Care",
-        "In-Home Care (professional staff such as nurses, CNAs, or aides)"
+        "Spouse / Partner",
+        "Parent / Parent-in-law",
+        "Other relative / POA",
+        "Friend / Other"
       ],
-      "branches": {
-        "Assisted Living (or Adult Family Home)": "room_type_person_a",
-        "Memory Care": "room_type_person_a",
-        "In-Home Care (professional staff such as nurses, CNAs, or aides)": "in_home_hours_person_a"
-      }
-    },
-    "room_type_person_a": {
-      "section": "care_needs",
-      "field": "room_type_person_a",
-      "prompt": "What is [person_a_name]'s preference for room type?",
-      "type": "single_select",
-      "options": ["Studio", "1 Bedroom", "2 Bedroom"],
-      "values_ref": "lookups.room_type",
-      "next": "care_level_detail_person_a"
-    },
-    "in_home_hours_person_a": {
-      "section": "care_needs",
-      "field": "hours_per_day_person_a",
-      "prompt": "How many hours per day of outside professional in-home care will be needed for [person_a_name]? (0-24)",
-      "type": "number",
-      "range": [0, 24],
-      "next": "care_level_detail_person_a"
-    },
-    "care_level_detail_person_a": {
-      "section": "care_needs",
-      "field": "care_level_person_a",
-      "prompt": "What is [person_a_name]'s care level need?\n\n1) None — Independent, no ongoing support needed (+$0/month)\n2) Low — Occasional help (e.g., medication reminders, light support) (+$1,000/month)\n3) Medium — Daily assistance with several activities (e.g., bathing, dressing, meals) (+$3,000/month)\n4) High — Significant daily support or nursing care needed (+$6,000/month)",
-      "type": "single_select",
-      "options": ["None", "Low", "Medium", "High"],
-      "values_ref": "lookups.care_level_adders",
-      "next": "mobility_detail_person_a"
-    },
-    "mobility_detail_person_a": {
-      "section": "care_needs",
-      "field": "mobility_person_a",
-      "prompt": "What level of mobility assistance does [person_a_name] require?\n\n1) None — Fully independent, no mobility support (+$0)\n2) Walker — Requires walker or occasional balance assistance (+$600 if in-home, +$200 if facility)\n3) Wheelchair — Primarily uses a wheelchair, requires transfer support (+$3,000 if in-home, +$1,000 if facility)",
-      "type": "single_select",
-      "options": ["None", "Walker", "Wheelchair"],
-      "values_ref": {"facility": "lookups.mobility_adders.facility", "in_home": "lookups.mobility_adders.in_home"},
-      "next": "chronic_condition_detail_person_a"
-    },
-    "chronic_condition_detail_person_a": {
-      "section": "care_needs",
-      "field": "chronic_person_a",
-      "prompt": "What level of chronic condition care does [person_a_name] require?\n\n1) None — No chronic conditions (+$0)\n2) Some conditions (manageable) — E.g., diabetes, hypertension (+$200)\n3) Significant conditions (regular care) — E.g., advanced heart disease, dialysis (+$600)",
-      "type": "single_select",
-      "options": ["None", "Some conditions (manageable)", "Significant conditions (regular care)"],
-      "values_ref": "lookups.chronic_adders",
-      "next": "care_type_detail_person_b"
-    },
-    "care_type_detail_person_b": {
-      "section": "care_needs",
-      "field": "care_type_person_b",
-      "prompt": "What type of senior living care is being considered for [person_b_name]?",
-      "type": "single_select",
-      "options": [
-        "Assisted Living (or Adult Family Home)",
-        "Memory Care",
-        "In-Home Care (professional staff such as nurses, CNAs, or aides)"
-      ],
-      "branches": {
-        "Assisted Living (or Adult Family Home)": "room_type_person_b",
-        "Memory Care": "room_type_person_b",
-        "In-Home Care (professional staff such as nurses, CNAs, or aides)": "in_home_hours_person_b"
-      },
-      "condition": {"field": "person_b_in_care", "equals": true}
-    },
-    "room_type_person_b": {
-      "section": "care_needs",
-      "field": "room_type_person_b",
-      "prompt": "What is [person_b_name]'s preference for room type?",
-      "type": "single_select",
-      "options": ["Studio", "1 Bedroom", "2 Bedroom"],
-      "values_ref": "lookups.room_type",
-      "next": "care_level_detail_person_b"
-    },
-    "in_home_hours_person_b": {
-      "section": "care_needs",
-      "field": "hours_per_day_person_b",
-      "prompt": "How many hours per day of outside professional in-home care will be needed for [person_b_name]? (0-24)",
-      "type": "number",
-      "range": [0, 24],
-      "next": "care_level_detail_person_b"
-    },
-    "care_level_detail_person_b": {
-      "section": "care_needs",
-      "field": "care_level_person_b",
-      "prompt": "What is [person_b_name]'s care level need?\n\n1) None — Independent, no ongoing support needed (+$0/month)\n2) Low — Occasional help (e.g., medication reminders, light support) (+$1,000/month)\n3) Medium — Daily assistance with several activities (e.g., bathing, dressing, meals) (+$3,000/month)\n4) High — Significant daily support or nursing care needed (+$6,000/month)",
-      "type": "single_select",
-      "options": ["None", "Low", "Medium", "High"],
-      "values_ref": "lookups.care_level_adders",
-      "next": "mobility_detail_person_b"
-    },
-    "mobility_detail_person_b": {
-      "section": "care_needs",
-      "field": "mobility_person_b",
-      "prompt": "What level of mobility assistance does [person_b_name] require?\n\n1) None — Fully independent, no mobility support (+$0)\n2) Walker — Requires walker or occasional balance assistance (+$600 if in-home, +$200 if facility)\n3) Wheelchair — Primarily uses a wheelchair, requires transfer support (+$3,000 if in-home, +$1,000 if facility)",
-      "type": "single_select",
-      "options": ["None", "Walker", "Wheelchair"],
-      "values_ref": {"facility": "lookups.mobility_adders.facility", "in_home": "lookups.mobility_adders.in_home"},
-      "next": "chronic_condition_detail_person_b"
-    },
-    "chronic_condition_detail_person_b": {
-      "section": "care_needs",
-      "field": "chronic_person_b",
-      "prompt": "What level of chronic condition care does [person_b_name] require?\n\n1) None — No chronic conditions (+$0)\n2) Some conditions (manageable) — E.g., diabetes, hypertension (+$200)\n3) Significant conditions (regular care) — E.g., advanced heart disease, dialysis (+$600)",
-      "type": "single_select",
-      "options": ["None", "Some conditions (manageable)", "Significant conditions (regular care)"],
-      "values_ref": "lookups.chronic_adders",
-      "next": "shared_unit_question"
-    },
-    "shared_unit_question": {
-      "section": "care_needs",
-      "field": "share_one_unit",
-      "prompt": "Will [person_a_name] and [person_b_name] share one unit (room/apartment)?",
-      "type": "boolean",
-      "true_value": true,
-      "false_value": false,
       "condition": {
-        "field": "person_a_in_care",
-        "equals": true,
-        "and": {
-          "field": "person_b_in_care",
-          "equals": true,
-          "and": {
-            "field": "care_type_person_a",
-            "in": ["Assisted Living (or Adult Family Home)", "Memory Care"],
-            "and": {
-              "field": "care_type_person_b",
-              "in": ["Assisted Living (or Adult Family Home)", "Memory Care"]
-            }
+        "field": "who_planning_for",
+        "equals": "Someone else"
+      }
+    },
+    "q3_names": {
+      "id": "names",
+      "fields": [
+        {
+          "field": "care_recipient_name",
+          "label": "Care recipient name",
+          "kind": "text"
+        },
+        {
+          "field": "planner_name",
+          "label": "Your name (if different)",
+          "kind": "text",
+          "condition": {
+            "field": "who_planning_for",
+            "equals": "Someone else"
           }
         }
-      },
-      "next": "household_questions"
-    },
-    "household_questions": {
-      "section": "household",
-      "group": ["group_income_person_a", "group_income_person_b", "group_optional_costs", "group_home_carry", "group_assets", "group_benefits_person_a", "group_benefits_person_b"],
-      "condition": {"field": "features.flow_mode", "equals": "full_household"}
-    },
-    "results": {
-      "section": "results",
-      "sim_care_only": "ui_guidance.results.simulation_mode.care_only",
-      "sim_full": "ui_guidance.results.simulation_mode.full_household"
-    }
-  },
-  "calculation_logic": {
-    "_comment": "Formulas are expressed in a simple DSL. Implementers should map these to actual code.",
-    "per_person": {
-      "a": {
-        "care_type": "care_type_person_a",
-        "facility_cost": "(lookups.room_type[room_type_person_a] * (care_type_person_a == 'Memory Care' ? settings.memory_care_multiplier : 1)) + lookups.care_level_adders[care_level_person_a] + lookups.mobility_adders.facility[mobility_person_a] + lookups.chronic_adders[chronic_person_a]",
-        "in_home_cost": "(lookups.in_home_care_matrix[hours_per_day_person_a] * settings.days_per_month) + lookups.mobility_adders.in_home[mobility_person_a] + lookups.chronic_adders[chronic_person_a]",
-        "stay_home_cost": "lookups.care_level_adders[care_level_person_a] + lookups.mobility_adders.facility[mobility_person_a] + lookups.chronic_adders[chronic_person_a]",
-        "selected": "if care_type_person_a == 'In-Home Care (professional staff such as nurses, CNAs, or aides)' then in_home_cost else if care_type_person_a == 'Assisted Living (or Adult Family Home)' or care_type_person_a == 'Memory Care' then facility_cost else stay_home_cost"
-      },
-      "b": {
-        "care_type": "care_type_person_b",
-        "facility_cost": "(lookups.room_type[room_type_person_b] * (care_type_person_b == 'Memory Care' ? settings.memory_care_multiplier : 1)) + lookups.care_level_adders[care_level_person_b] + lookups.mobility_adders.facility[mobility_person_b] + lookups.chronic_adders[chronic_person_b]",
-        "in_home_cost": "(lookups.in_home_care_matrix[hours_per_day_person_b] * settings.days_per_month) + lookups.mobility_adders.in_home[mobility_person_b] + lookups.chronic_adders[chronic_person_b]",
-        "stay_home_cost": "lookups.care_level_adders[care_level_person_b] + lookups.mobility_adders.facility[mobility_person_b] + lookups.chronic_adders[chronic_person_b]",
-        "selected": "if care_type_person_b == 'In-Home Care (professional staff such as nurses, CNAs, or aides)' then in_home_cost else if care_type_person_b == 'Assisted Living (or Adult Family Home)' or care_type_person_b == 'Memory Care' then facility_cost else stay_home_cost"
-      }
-    },
-    "shared_unit_adjustment": "if person_a_in_care and person_b_in_care and share_one_unit == true and (care_type_person_a in ['Assisted Living (or Adult Family Home)', 'Memory Care']) and (care_type_person_b in ['Assisted Living (or Adult Family Home)', 'Memory Care']) then ((lookups.room_type[room_type_person_b] * (care_type_person_b == 'Memory Care' ? settings.memory_care_multiplier : 1)) - settings.second_person_cost) else 0",
-    "_comment_shared": "Subtract the difference between person B's full room charge (with MC multiplier if applicable) and the second person cost flat addon. Care level/mobility/chronic for B remain.",
-    "care_cost_total": "coalesce(per_person.a.selected, 0) + coalesce(per_person.b.selected, 0) - shared_unit_adjustment",
-    "optional_costs_sum": "sum(optional_rx, optional_personal_care, optional_phone_internet, optional_life_insurance, optional_transportation, optional_family_travel, optional_auto, optional_auto_insurance, optional_other)",
-    "home_carry_sum": "sum(mortgage, taxes, insurance, hoa, utilities)",
-    "house_cost_total": "features.flow_mode == 'full_household' ? (maintain_home_household == true ? home_carry_sum : 0) : 0",
-    "monthly_cost_full": "care_cost_total + house_cost_total + optional_costs_sum",
-    "va_benefit_total": "sum(va_benefit_person_a, va_benefit_person_b)",
-    "ltc_benefit_total": "sum(ltc_insurance_person_a, ltc_insurance_person_b)",
-    "household_income": "features.flow_mode == 'full_household' ? sum(social_security_person_a, social_security_person_b, pension_person_a, pension_person_b, re_investment_income) + va_benefit_total + ltc_benefit_total : 0",
-    "monthly_cost": "features.flow_mode == 'care_only' ? care_cost_total : monthly_cost_full",
-    "monthly_gap": "features.flow_mode == 'care_only' ? null : max(0, monthly_cost_full - household_income)",
-    "total_assets": "features.flow_mode == 'care_only' ? null : sum(home_equity, other_assets)",
-    "years_funded": "features.flow_mode == 'care_only' ? null : (monthly_gap <= 0 ? 1000000000 : total_assets / (monthly_gap * 12))",
-    "display_years": "features.flow_mode == 'care_only' ? null : min(years_funded, settings.display_cap_years_funded)",
-    "debug_tables": {
-      "care_breakdown": ["per_person.a.selected", "per_person.b.selected", "shared_unit_adjustment", "care_cost_total"],
-      "home_carry_breakdown": ["mortgage", "taxes", "insurance", "hoa", "utilities", "house_cost_total"],
-      "optional_costs_breakdown": [
-        "optional_rx", "optional_personal_care", "optional_phone_internet", "optional_life_insurance",
-        "optional_transportation", "optional_family_travel", "optional_auto", "optional_auto_insurance", "optional_other", "optional_costs_sum"
       ]
-    }
-  },
-  "entry_point": "entry_mode",
-  "metadata": {
-    "notes": [
-      "This v5 file fully encodes Myself (single), Someone else (single), and Two-person planning flows.",
-      "VA prompts only appear in full_household and only for care recipients.",
-      "Shared-unit rule applies to AL/MC plus share_one_unit=true; person B's room portion is replaced by second_person_cost.",
-      "In simulation_mode true, show breakdown tables specified in calculation_logic.debug_tables."
-    ],
-    "updated_at": "2025-09-02T14:45:47.382239Z",
-    "sim_instructions": [
-      "Always load the v5 JSON schema.",
-      "Default to simulation_mode = true unless told otherwise.",
-      "Start at entry_point (entry_mode).",
-      "Ask each prompt in sequence, enumerating options when they exist.",
-      "Personalize text using person_a_name and person_b_name once collected.",
-      "Adjust pronouns: use 'your' if Myself, 'their' if Someone else.",
-      "Skip household, assets, and VA prompts when flow_mode = 'care_only'.",
-      "Only ask 'share_one_unit' if both are in AL/MC.",
-      "For checkbox prompts: list options with numbers, allow multiple selections, only ask follow-ups for selected items.",
-      "At results node: in simulation_mode, show full breakdown tables; in end_user mode, only show summary fields.",
-      "Always output clear final labels: Monthly care cost, Household income (if applicable), Monthly gap, Total assets, Years funded."
-    ]
+    },
+    "notes": "Frontends may use this to drive the initial stepper. Calculators can ignore it."
   },
   "ui_groups": [
     {
       "id": "group_income_person_a",
-      "label": "Monthly income (Person A)",
-      "type": "currency_multi",
-      "prompt": "What monthly income does [person_a_name] receive? (Social Security, Pension, Re-investment/Other)",
+      "label": "Income \u2014 Person A",
+      "prompt": "Enter monthly income for the care recipient.",
       "fields": [
-        {"field": "social_security_person_a", "label": "Social Security", "default": 0},
-        {"field": "pension_person_a", "label": "Pension", "default": 0},
-        {"field": "re_investment_income", "label": "Re-investment / Other", "default": 0}
-      ]
+        {
+          "field": "social_security_person_a",
+          "label": "Social Security \u2014 A",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "pension_person_a",
+          "label": "Pension \u2014 A",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "re_investment_income",
+          "label": "Investment/Other household income",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        }
+      ],
+      "module": "income"
     },
     {
       "id": "group_income_person_b",
-      "label": "Monthly income (Person B)",
-      "type": "currency_multi",
-      "prompt": "What monthly income does [person_b_name] receive? (Social Security, Pension, Re-investment/Other)",
+      "label": "Income \u2014 Person B",
+      "prompt": "Enter monthly income for spouse/partner (if included).",
+      "condition": {
+        "field": "include_b",
+        "equals": true
+      },
       "fields": [
-        {"field": "social_security_person_b", "label": "Social Security (B)", "default": 0},
-        {"field": "pension_person_b", "label": "Pension (B)", "default": 0},
-        {"field": "re_investment_income", "label": "Re-investment / Other (household)", "default": 0}
-      ]
+        {
+          "field": "social_security_person_b",
+          "label": "Social Security \u2014 B",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "pension_person_b",
+          "label": "Pension \u2014 B",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        }
+      ],
+      "module": "income"
+    },
+    {
+      "id": "group_benefits_person_a",
+      "label": "Benefits \u2014 Person A",
+      "prompt": "VA and long-term care insurance for Person A.",
+      "fields": [
+        {
+          "field": "va_benefit_person_a",
+          "label": "VA benefit (monthly $)",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "ltc_insurance_person_a",
+          "label": "LTC insurance \u2014 A",
+          "kind": "boolean",
+          "true_value": "Yes",
+          "false_value": "No",
+          "default": "No",
+          "optional": true,
+          "skip_value": "No"
+        }
+      ],
+      "module": "benefits"
+    },
+    {
+      "id": "group_benefits_person_b",
+      "label": "Benefits \u2014 Person B",
+      "prompt": "VA and long-term care insurance for Person B (if included).",
+      "condition": {
+        "field": "include_b",
+        "equals": true
+      },
+      "fields": [
+        {
+          "field": "va_benefit_person_b",
+          "label": "VA benefit (monthly $) \u2014 B",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "ltc_insurance_person_b",
+          "label": "LTC insurance \u2014 B",
+          "kind": "boolean",
+          "true_value": "Yes",
+          "false_value": "No",
+          "default": "No",
+          "optional": true,
+          "skip_value": "No"
+        }
+      ],
+      "module": "benefits"
+    },
+    {
+      "id": "group_home_carry",
+      "label": "Home carry costs",
+      "prompt": "If you maintain the current home, include these ongoing costs.",
+      "condition": {
+        "field": "maintain_home_household",
+        "equals": true
+      },
+      "fields": [
+        {
+          "field": "mortgage",
+          "label": "Mortgage",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "taxes",
+          "label": "Property taxes",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "insurance",
+          "label": "Home insurance",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "hoa",
+          "label": "HOA",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "utilities",
+          "label": "Utilities",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        }
+      ],
+      "module": "house_carry"
     },
     {
       "id": "group_optional_costs",
       "label": "Optional monthly costs",
-      "type": "currency_multi",
-      "prompt": "Any of these monthly costs? (Enter amounts; leave blank or 0 if none.)",
+      "prompt": "Common recurring costs that may continue during care.",
       "fields": [
-        {"field": "optional_rx", "label": "Prescription / Rx", "default": 0},
-        {"field": "optional_personal_care", "label": "Personal care (hair, nails)", "default": 0},
-        {"field": "optional_phone_internet", "label": "Phone / Internet", "default": 0},
-        {"field": "optional_life_insurance", "label": "Life insurance", "default": 0},
-        {"field": "optional_transportation", "label": "Transportation", "default": 0},
-        {"field": "optional_family_travel", "label": "Family travel", "default": 0},
-        {"field": "optional_auto", "label": "Auto (car payment)", "default": 0},
-        {"field": "optional_auto_insurance", "label": "Auto insurance", "default": 0},
-        {"field": "optional_other", "label": "Other", "default": 0}
-      ]
-    },
-    {
-      "id": "group_home_carry",
-      "label": "Home carry (if you'll keep the home)",
-      "type": "currency_multi_conditional",
-      "condition": {"field": "maintain_home_household", "equals": true},
-      "prompt": "Home costs you'll continue paying monthly:",
-      "fields": [
-        {"field": "mortgage", "label": "Mortgage", "default": 0},
-        {"field": "taxes", "label": "Property taxes", "default": 0},
-        {"field": "insurance", "label": "Home insurance", "default": 0},
-        {"field": "hoa", "label": "HOA dues", "default": 0},
-        {"field": "utilities", "label": "Utilities", "default": 0}
-      ]
+        {
+          "field": "optional_rx",
+          "label": "Prescriptions / medical supplies",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_personal_care",
+          "label": "Personal care / toiletries",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_phone_internet",
+          "label": "Phone & internet",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_life_insurance",
+          "label": "Life insurance premiums",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_transportation",
+          "label": "Transportation (public/ride-hail)",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_family_travel",
+          "label": "Family travel/visits",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_auto",
+          "label": "Auto expenses (fuel/maint)",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_auto_insurance",
+          "label": "Auto insurance",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "optional_other",
+          "label": "Other",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        }
+      ],
+      "module": "optional_costs"
     },
     {
       "id": "group_assets",
       "label": "Assets",
-      "type": "currency_multi",
-      "prompt": "Roughly how much in assets?",
+      "prompt": "Assets available to help fund care.",
       "fields": [
-        {"field": "home_equity", "label": "Home equity", "default": 0},
-        {"field": "other_assets", "label": "Other assets", "default": 0}
-      ]
-    },
-    {
-      "id": "group_benefits_person_a",
-      "label": "Benefits & policies (Person A)",
-      "type": "mixed_multi",
-      "prompt": "Does [person_a_name] receive VA benefits or have Long-Term Care insurance?",
-      "fields": [
-        {"field": "va_benefit_person_a", "label": "VA benefit (monthly $)", "kind": "currency", "default": 0},
-        {"field": "ltc_insurance_person_a", "label": "LTC insurance", "kind": "boolean", "true_value": "Yes", "false_value": "No", "default": "No"}
-      ]
-    },
-    {
-      "id": "group_benefits_person_b",
-      "label": "Benefits & policies (Person B)",
-      "type": "mixed_multi",
-      "prompt": "Does [person_b_name] receive VA benefits or have Long-Term Care insurance?",
-      "fields": [
-        {"field": "va_benefit_person_b", "label": "VA benefit (monthly $) — B", "kind": "currency", "default": 0},
-        {"field": "ltc_insurance_person_b", "label": "LTC insurance — B", "kind": "boolean", "true_value": "Yes", "false_value": "No", "default": "No"}
-      ]
+        {
+          "field": "home_equity",
+          "label": "Home equity (available)",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        },
+        {
+          "field": "other_assets",
+          "label": "Other liquid assets",
+          "kind": "currency",
+          "default": 0,
+          "optional": true,
+          "skip_value": 0
+        }
+      ],
+      "module": "assets"
     }
-  ]
+  ],
+  "modules": [
+    {
+      "id": "income",
+      "label": "Income",
+      "default_selected": true
+    },
+    {
+      "id": "benefits",
+      "label": "Benefits (VA / LTC)",
+      "default_selected": true
+    },
+    {
+      "id": "house_carry",
+      "label": "House carry (mortgage/taxes/etc.)",
+      "default_selected": false,
+      "condition": {
+        "field": "maintain_home_household",
+        "equals": true
+      }
+    },
+    {
+      "id": "optional_costs",
+      "label": "Optional monthly costs",
+      "default_selected": true
+    },
+    {
+      "id": "assets",
+      "label": "Assets",
+      "default_selected": true
+    }
+  ],
+  "ui_contract": {
+    "modules": "Render a checkbox per module; only render groups for modules that are checked; respect module.condition if present.",
+    "groups": "Within each rendered group, show an 'Include' checkbox for each field. If not included, write field.skip_value.",
+    "intro_flow": "Frontends may render q1_who -> q2_relationship (conditional) -> q3_names before cost sections."
+  }
 }

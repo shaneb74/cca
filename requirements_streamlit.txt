@@ -1,1 +1,5 @@
-streamlit>=1.35.0 python-decimal>=1.1.0
+streamlit>=1.35.0
+pandas>=2.0.0
+numpy>=1.23.0,<2.1.0
+altair<6
+pyarrow>=7.0
