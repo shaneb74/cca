@@ -21,8 +21,12 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
     spec = _read_json(base_path)
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path)
+
+        # Add/override top-level modules
         if overlay.get("modules"):
             spec["modules"] = overlay["modules"]
+
+        # Apply ui_group overrides
         overrides = overlay.get("ui_group_overrides", {})
         gid_to_group = {g["id"]: g for g in spec.get("ui_groups", [])}
         for gid, ov in overrides.items():
@@ -31,15 +35,20 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
                 continue
             if "module" in ov:
                 g["module"] = ov["module"]
+
             field_ovs = ov.get("field_overrides", {})
             wildcard = field_ovs.get("*", {})
             for f in g.get("fields", []):
                 label = f.get("label", f["field"])
                 this_ov = field_ovs.get(label, {})
+                # wildcard defaults
                 for k, v in wildcard.items():
                     f.setdefault(k, v)
+                # specific overrides
                 for k, v in this_ov.items():
                     f[k] = v
+
+        # Ensure optional + skip_value semantics
         for g in spec.get("ui_groups", []):
             for f in g.get("fields", []):
                 kind = f.get("kind", "currency")
@@ -55,22 +64,27 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
 def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
     flat = dict(existing_fields or {})
     groups = {g["id"]: g for g in groups_cfg}
+
     for gid, answers in grouped_answers.items():
         cfg = groups.get(gid)
         if not cfg:
             continue
+        # Respect conditional groups against current flat state
         cond = cfg.get("condition")
         if cond and flat.get(cond.get("field")) != cond.get("equals"):
             continue
-        for f in cfg.get("fields", []):
+
+        for f in cfg["fields"]:
             field_name = f["field"]
             label = f.get("label", f["field"])
             kind = f.get("kind", "currency")
             default = f.get("default", 0)
+
             raw_val = answers.get(label)
             if raw_val is None:
                 raw_val = answers.get(field_name, default)
             value = raw_val
+
             if kind == "currency":
                 try:
                     flat[field_name] = float(value)
@@ -95,6 +109,7 @@ def compute(spec, inputs):
         care_level = inputs.get(f"care_level_person_{person}")
         mobility = inputs.get(f"mobility_person_{person}")
         chronic = inputs.get(f"chronic_person_{person}")
+
         care_level_add = lookups["care_level_adders"].get(care_level, 0)
         mobility_fac = lookups["mobility_adders"]["facility"].get(mobility, 0)
         mobility_home = lookups["mobility_adders"]["in_home"].get(mobility, 0)
@@ -120,6 +135,7 @@ def compute(spec, inputs):
             return 0.0
         if not inputs.get("share_one_unit"):
             return 0.0
+
         a_type = inputs.get("care_type_person_a")
         b_type = inputs.get("care_type_person_b")
         facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
@@ -192,7 +208,6 @@ if (not _Path(OVERLAY_PATH).exists()) and st.checkbox("Upload optional overlay J
 try:
     spec = load_spec_with_overlay(JSON_PATH, OVERLAY_PATH)
 except Exception as e:
-    import traceback
     st.error("Couldn't load the calculator JSON. Check filenames/paths and JSON validity.")
     st.code(f"JSON_PATH={JSON_PATH}\nOVERLAY_PATH={OVERLAY_PATH}")
     st.exception(e)
@@ -320,16 +335,18 @@ if st.session_state.step >= 2:
 
 st.divider()
 
-# ---------- Step 3 ----------
+# ---------- Step 3 (two-phase: select items, then input details) ----------
 if st.session_state.step >= 3:
     st.header("Step 3 · Choose what you want to enter")
-    st.caption("Check the categories you want to include. We’ll only ask for those details. You can come back and add more any time.")
+    st.caption("Pick the items that apply. We’ll only show inputs for those, and skip the rest automatically.")
 
+    # Build categories dynamically from modules (if present) else fallback map
     modules = spec.get("modules")
     if modules:
         cat_order = [m["label"] for m in modules]
         id_by_label = {m["label"]: m["id"] for m in modules}
         default_on = {m["label"] for m in modules if m.get("default_selected", True)}
+        # Map module id -> group ids
         mod_to_groupids = {}
         for g in groups_cfg:
             mod = g.get("module")
@@ -342,56 +359,113 @@ if st.session_state.step >= 3:
             "Benefits (VA / LTC)": ["group_benefits_person_a", "group_benefits_person_b"],
             "House carry (mortgage/taxes/etc.)": ["group_home_carry"],
             "Optional monthly costs": ["group_optional_costs"],
-            "Assets": ["group_assets"]
+            "Assets": ["group_assets"],
         }
         default_on = {"Income", "Benefits (VA / LTC)", "Optional monthly costs", "Assets"}
 
-    chosen_flags = {}
+    # Top-level category toggles
+    chosen_cats = {}
     st.markdown("**Categories:**")
+    default_on = set(default_on) if 'default_on' in locals() else set(CATEGORY_MAP.keys())
     for cat in CATEGORY_MAP.keys():
-        chosen_flags[cat] = st.checkbox(cat, value=(cat in default_on), key=f"cat_{cat}")
+        chosen_cats[cat] = st.checkbox(cat, value=(cat in default_on), key=f"cat_{cat}")
 
     keep_home = st.checkbox("Maintain current home while in care?", value=False, key="keep_home")
     inputs["maintain_home_household"] = keep_home
 
-    def group_form_modular(gid, name_hint=None):
+    # Helper: list fields that belong to a group (for the selection step)
+    def list_group_items(gid, name_hint=None):
+        g = groups[gid]
+        # Respect group-level condition (e.g., only show Person B groups if included)
+        cond = g.get("condition")
+        if cond and inputs.get(cond["field"]) != cond.get("equals"):
+            return None, None
+        # Expand dynamic name labels in the group heading
+        heading = g["label"]
+        if name_hint:
+            heading = heading.replace("Person A", name_hint.get("A", "Person A")).replace("Person B", name_hint.get("B", "Person B"))
+        # Build (label, field_cfg) list
+        items = []
+        for f in g["fields"]:
+            label = f.get("label", f["field"])
+            items.append((label, f))
+        return heading, items
+
+    # PHASE 1: Selection — per-category, show item checkboxes only (no inputs yet)
+    st.subheader("Pick items to include")
+    name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
+
+    # store the user’s selection in session_state to keep it sticky across reruns
+    if "sel_items" not in st.session_state:
+        st.session_state.sel_items = {}  # { gid: set([labels...]) }
+
+    for cat, on in chosen_cats.items():
+        if not on:
+            # If a category is toggled off, clear any previous selections for its groups
+            for gid in CATEGORY_MAP[cat]:
+                st.session_state.sel_items.pop(gid, None)
+            continue
+
+        st.markdown(f"### {cat}")
+        for gid in CATEGORY_MAP[cat]:
+            if gid not in groups:
+                continue
+            heading, items = list_group_items(gid, name_hint=name_hint)
+            if heading is None:
+                continue  # group condition not met (e.g., person B not included)
+
+            with st.expander(f"{heading}", expanded=False):
+                selected = st.session_state.sel_items.get(gid, set())
+                new_selected = set(selected)  # copy
+                for (label, fcfg) in items:
+                    # default to False so testers explicitly opt-in
+                    chk = st.checkbox(label, value=(label in selected), key=f"sel_{gid}_{label}")
+                    if chk:
+                        new_selected.add(label)
+                    else:
+                        new_selected.discard(label)
+                st.session_state.sel_items[gid] = new_selected
+
+    st.divider()
+
+    # Helper that renders inputs only for selected items; auto-writes skip_value for the rest
+    def render_group_inputs(gid, selected_labels, existing=None, name_hint=None):
         g = groups[gid]
         cond = g.get("condition")
         if cond and inputs.get(cond["field"]) != cond.get("equals"):
             return None
-        heading = g['label']
+        heading = g["label"]
         if name_hint:
-            heading = heading.replace("Person A", name_hint.get("A","Person A")).replace("Person B", name_hint.get("B","Person B"))
+            heading = heading.replace("Person A", name_hint.get("A", "Person A")).replace("Person B", name_hint.get("B", "Person B"))
+
         with st.expander(f"{heading} — {g['prompt']}", expanded=True):
             ans = {}
-            for f in g.get("fields", []):
+            for f in g["fields"]:
                 label = f.get("label", f["field"])
-                kind = f.get("kind","currency")
+                kind = f.get("kind", "currency")
                 default = f.get("default", 0)
 
-                include_item = True
-                if kind == "currency":
-                    include_item = st.checkbox(f"Include: {label}", value=True, key=f"inc_{gid}_{label}")
-                elif kind == "boolean":
-                    include_item = st.checkbox(f"Include: {label}", value=False, key=f"inc_{gid}_{label}")
-
-                if not include_item:
-                    ans[label] = f.get("skip_value", 0 if kind=="currency" else "No")
+                # If not selected in Phase 1, auto-apply skip_value and DO NOT render any input
+                if label not in selected_labels:
+                    ans[label] = f.get("skip_value", 0 if kind == "currency" else ("No" if kind == "boolean" else None))
                     continue
 
+                # Otherwise, render a proper input for the selected item
                 if kind == "boolean":
-                    v = st.checkbox(label, value=(str(default).lower() in {'yes','true','1'}), key=f"bool_{gid}_{label}")
+                    v = st.checkbox(label, value=(str(default).lower() in {"yes", "true", "1"}), key=f"bool_{gid}_{label}")
                     ans[label] = v
                 else:
-                    v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"num_{gid}_{label}")
+                    v = st.number_input(
+                        label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"num_{gid}_{label}"
+                    )
                     ans[label] = v
             return ans
 
+    # PHASE 2: Details — show inputs only for selected items
+    st.subheader("Enter details for the items you selected")
     grouped_answers = {}
     with st.form("finance_form"):
-        name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
-
-        for cat, on in chosen_flags.items():
+        for cat, on in chosen_cats.items():
             if not on:
                 continue
             for gid in CATEGORY_MAP[cat]:
@@ -399,7 +473,8 @@ if st.session_state.step >= 3:
                     continue
                 if gid not in groups:
                     continue
-                ans = group_form_modular(gid, name_hint=name_hint)
+                selected = st.session_state.sel_items.get(gid, set())
+                ans = render_group_inputs(gid, selected, existing=inputs, name_hint=name_hint)
                 if ans is not None:
                     grouped_answers[gid] = ans
 
