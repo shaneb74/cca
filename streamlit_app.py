@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
+OVERLAY_PATH = "senior_care_modular_overlay.json"  # optional
 
 # ---------- Helpers ----------
 def money(x):
@@ -13,8 +14,54 @@ def money(x):
     except Exception:
         return 0.0
 
-def load_spec(path: str):
+def _read_json(path: str):
     return json.loads(Path(path).read_text())
+
+def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
+    spec = _read_json(base_path)
+
+    if overlay_path and Path(overlay_path).exists():
+        overlay = _read_json(overlay_path)
+
+        # Merge top-level modules
+        if overlay.get("modules"):
+            spec["modules"] = overlay["modules"]
+
+        # Apply ui_group overrides
+        overrides = overlay.get("ui_group_overrides", {})
+        gid_to_group = {g["id"]: g for g in spec.get("ui_groups", [])}
+        for gid, ov in overrides.items():
+            g = gid_to_group.get(gid)
+            if not g:
+                continue
+            if "module" in ov:
+                g["module"] = ov["module"]
+
+            # Field overrides
+            field_ovs = ov.get("field_overrides", {})
+            wildcard = field_ovs.get("*", {})
+            for f in g.get("fields", []):
+                label = f.get("label", f["field"])
+                this_ov = field_ovs.get(label, {})
+                # Apply wildcard first, then specific
+                for k, v in wildcard.items():
+                    f.setdefault(k, v)
+                for k, v in this_ov.items():
+                    f[k] = v
+
+        # Ensure defaults for optional + skip_value if overlay present
+        for g in spec.get("ui_groups", []):
+            for f in g.get("fields", []):
+                kind = f.get("kind", "currency")
+                f.setdefault("optional", True)
+                if kind == "currency":
+                    f.setdefault("skip_value", 0)
+                elif kind == "boolean":
+                    f.setdefault("skip_value", "No")
+                else:
+                    f.setdefault("skip_value", None)
+
+    return spec
 
 def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
     flat = dict(existing_fields or {})
@@ -147,7 +194,8 @@ def compute(spec, inputs):
 
 # ---------- UI (progressive steps + modular categories) ----------
 st.set_page_config(page_title="Senior Care Cost Wizard", page_icon="🧭", layout="centered")
-spec = load_spec(JSON_PATH)
+spec = load_spec_with_overlay(JSON_PATH, OVERLAY_PATH)
+
 groups_cfg = spec.get("ui_groups", [])
 groups = {g["id"]: g for g in groups_cfg}
 
@@ -156,12 +204,11 @@ if "step" not in st.session_state:
 
 st.title("🧭 Senior Care Cost Wizard")
 with st.expander("Loaded calculator spec (JSON)", expanded=False):
-    st.code(JSON_PATH)
+    st.code(JSON_PATH + (" + overlay" if Path(OVERLAY_PATH).exists() else ""))
 
 # Names from state
 care_recipient = st.session_state.get("care_recipient", "Care Recipient")
 planner_name = st.session_state.get("planner", "Planner")
-include_b_state = st.session_state.get("include_b", False)
 person_b_name = st.session_state.get("person_b_name", "Partner")
 
 # ---------- Step 1 ----------
@@ -207,7 +254,8 @@ if st.session_state.step >= 2:
 
     st.subheader("Spouse / Partner (optional)")
     st.caption("Even if your spouse/partner isn’t receiving paid care, keeping the home (mortgage/taxes/insurance/utilities) can affect how affordable your care is. Add them to account for household costs.")
-    include_b = st.checkbox("Include spouse/partner in this plan?", value=include_b_state, key="include_b")
+    include_b = st.checkbox("Include spouse/partner in this plan?", value=False, key="include_b")
+
     if include_b:
         inputs["person_b_in_care"] = True
         person_b_name = st.text_input("Person B name", value=person_b_name, key="person_b_name")
@@ -250,18 +298,36 @@ st.divider()
 # ---------- Step 3: Modular Household & Finances ----------
 if st.session_state.step >= 3:
     st.header("Step 3 · Choose what you want to enter")
-    st.caption("Select the categories you want to include. We’ll only ask for those details. You can come back and add more any time.")
+    st.caption("Check the categories you want to include. We’ll only ask for those details. You can come back and add more any time.")
 
-    CATEGORY_MAP = {
-        "Income": ["group_income_person_a", "group_income_person_b"],
-        "Benefits (VA / LTC)": ["group_benefits_person_a", "group_benefits_person_b"],
-        "House carry (mortgage/taxes/etc.)": ["group_home_carry"],
-        "Optional monthly costs": ["group_optional_costs"],
-        "Assets": ["group_assets"]
-    }
+    # Build categories dynamically from spec["modules"] if present; else fallback
+    modules = spec.get("modules")
+    if modules:
+        cat_order = [m["label"] for m in modules]
+        id_by_label = {m["label"]: m["id"] for m in modules}
+        default_on = {m["label"] for m in modules if m.get("default_selected", True)}
+        # Map module id -> group ids
+        mod_to_groupids = {}
+        for g in groups_cfg:
+            mod = g.get("module")
+            if mod:
+                mod_to_groupids.setdefault(mod, []).append(g["id"])
+        CATEGORY_MAP = {label: mod_to_groupids.get(id_by_label[label], []) for label in cat_order}
+    else:
+        CATEGORY_MAP = {
+            "Income": ["group_income_person_a", "group_income_person_b"],
+            "Benefits (VA / LTC)": ["group_benefits_person_a", "group_benefits_person_b"],
+            "House carry (mortgage/taxes/etc.)": ["group_home_carry"],
+            "Optional monthly costs": ["group_optional_costs"],
+            "Assets": ["group_assets"]
+        }
+        default_on = {"Income", "Benefits (VA / LTC)", "Optional monthly costs", "Assets"}
 
-    default_selected = ["Income", "Benefits (VA / LTC)", "Optional monthly costs", "Assets"]
-    chosen = st.multiselect("Categories to include:", list(CATEGORY_MAP.keys()), default=default_selected, key="chosen_categories")
+    # CHECKBOXES for categories
+    chosen_flags = {}
+    st.markdown("**Categories:**")
+    for cat in CATEGORY_MAP.keys():
+        chosen_flags[cat] = st.checkbox(cat, value=(cat in default_on), key=f"cat_{cat}")
 
     keep_home = st.checkbox("Maintain current home while in care?", value=False, key="keep_home")
     inputs["maintain_home_household"] = keep_home
@@ -271,44 +337,42 @@ if st.session_state.step >= 3:
         cond = g.get("condition")
         if cond and inputs.get(cond["field"]) != cond["equals"]:
             return None
-        # Dynamic heading with names
         heading = g['label']
         if name_hint:
             heading = heading.replace("Person A", name_hint.get("A","Person A")).replace("Person B", name_hint.get("B","Person B"))
-        st.markdown(f"**{heading}** — {g['prompt']}")
+        with st.expander(f"{heading} — {g['prompt']}", expanded=True):
+            ans = {}
+            for f in g["fields"]:
+                label = f.get("label", f["field"])
+                kind = f.get("kind","currency")
+                default = f.get("default", 0)
 
-        # NEW: let user choose which fields in this group to provide
-        field_labels = [f.get("label", f["field"]) for f in g["fields"]]
-        preselect = field_labels  # default: all selected
-        chosen_fields = st.multiselect("Which items do you want to enter?", field_labels, default=preselect, key=f"choose_{gid}")
+                include_item = True
+                if kind == "currency":
+                    include_item = st.checkbox(f"Include: {label}", value=True, key=f"inc_{gid}_{label}")
+                elif kind == "boolean":
+                    include_item = st.checkbox(f"Include: {label}", value=False, key=f"inc_{gid}_{label}")
 
-        ans = {}
-        for f in g["fields"]:
-            label = f.get("label", f["field"])
-            kind = f.get("kind","currency")
-            default = f.get("default", 0)
+                if not include_item:
+                    ans[label] = f.get("skip_value", 0 if kind=="currency" else "No")
+                    continue
 
-            if label not in chosen_fields:
-                # If skipped, set zero/No silently
-                ans[label] = 0 if kind == "currency" else "No"
-                continue
-
-            if kind == "boolean":
-                v = st.checkbox(label, value=(str(default).lower() in {"yes","true","1"}), key=f"bool_{gid}_{label}")
-                ans[label] = v
-            else:
-                v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"num_{gid}_{label}")
-                ans[label] = v
-        return ans
+                if kind == "boolean":
+                    v = st.checkbox(label, value=(str(default).lower() in {'yes','true','1'}), key=f"bool_{gid}_{label}")
+                    ans[label] = v
+                else:
+                    v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"num_{gid}_{label}")
+                    ans[label] = v
+            return ans
 
     grouped_answers = {}
-
     with st.form("finance_form"):
         name_hint = {"A": care_recipient or "Person A", "B": person_b_name or "Person B"}
 
-        for cat in chosen:
+        for cat, on in chosen_flags.items():
+            if not on:
+                continue
             for gid in CATEGORY_MAP[cat]:
-                # Skip Person B groups if B not included
                 if gid.endswith("_person_b") and not st.session_state.get("include_b"):
                     continue
                 if gid not in groups:
@@ -322,7 +386,6 @@ if st.session_state.step >= 3:
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=inputs)
         res = compute(spec, flat_inputs)
-
         st.success("Calculation complete")
         colA, colB, colC = st.columns(3)
         with colA:
