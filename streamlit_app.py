@@ -159,7 +159,7 @@ def compute(spec, inputs):
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields)
     house_cost_total = home_sum if inputs.get("maintain_home_household") else 0.0
 
-    # VA & LTC were captured as inputs in the UI layer; just total them here
+    # VA & LTC flags/amounts are captured in the UI layer
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
@@ -177,15 +177,15 @@ def compute(spec, inputs):
     total_assets = inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0)
 
     if monthly_gap <= 0:
-        display_years = settings["display_cap_years_funded"]
+        display_years = spec["settings"]["display_cap_years_funded"]
     else:
         years_funded = total_assets / (monthly_gap * 12) if (monthly_gap * 12) > 0 else float("inf")
-        display_years = min(years_funded, settings["display_cap_years_funded"])
+        display_years = min(years_funded, spec["settings"]["display_cap_years_funded"])
 
     return {
         "care_cost_total": money(care_cost_total),
         "monthly_cost": money(monthly_cost_full),
-        "household_income": money(money(household_income)),
+        "household_income": money(household_income),
         "monthly_gap": money(monthly_gap),
         "total_assets": money(total_assets),
         "years_funded_cap30": (None if display_years is None or display_years == float("inf") else round(display_years,2))
@@ -236,20 +236,21 @@ if who == "Someone else":
         "Spouse / Partner", "Parent / Parent-in-law", "Other relative / POA", "Friend / Other"
     ], key="relationship")
 
+# Two clear columns: left = care recipient, right = planner + spouse checkbox
 col1, col2 = st.columns(2)
 with col1:
     care_recipient = st.text_input("Care recipient's name", value=care_recipient, key="care_recipient")
 with col2:
-    planner_name = st.text_input("Your name (if different)", value=(planner_name if who=="Someone else" else ""), key="planner")
-
-# Spouse/partner shortcut for Step 1
-if who == "Someone else":
-    is_spouse = st.checkbox("I am the spouse/domestic partner of the care recipient", value=False, key="is_spouse_partner")
-    if is_spouse:
-        st.session_state.include_b = True
-        # default Person B name to the planner name
-        if planner_name:
-            st.session_state.person_b_name = planner_name
+    planner_name = st.text_input("Your name (planner)", value=(planner_name if who=="Someone else" else ""), key="planner")
+    # Spouse/partner shortcut lives with the planner field so the association is obvious
+    if who == "Someone else":
+        is_spouse = st.checkbox("I am the spouse/domestic partner of the care recipient", key="is_spouse_partner")
+        # Only set include_b default ONCE; don't force it on every rerun (fixes re-check bug)
+        if "include_b" not in st.session_state:
+            st.session_state.include_b = bool(is_spouse)
+        # If they check it and we don't have a Person B name yet, seed it from the planner
+        if is_spouse and not st.session_state.get("person_b_name"):
+            st.session_state.person_b_name = planner_name or "Partner"
 
 if st.button("Continue to care plan →", type="primary"):
     st.session_state.step = max(st.session_state.step, 2)
@@ -279,18 +280,34 @@ if st.session_state.step >= 2:
     inputs["chronic_person_a"]    = st.selectbox("Chronic conditions", ["None","Some conditions (manageable)","Multiple conditions (complex)"], index=1, key="cc_a")
 
     st.subheader("Spouse / Partner (optional)")
-    st.caption(
-        "Even if your spouse/partner isn’t receiving paid care, keeping the home "
-        "(mortgage/taxes/insurance/utilities) can affect how affordable your care is. "
-        "Add them to account for household costs. ‘Stay at Home’ means no paid care; "
-        "choose ‘In-Home Care’ if they will receive professional caregiver hours."
+
+    # Dynamic context when planner is the spouse
+    if st.session_state.get("is_spouse_partner", False):
+        st.caption(
+            f"You're planning for **{care_recipient or 'your spouse'}**. Even if **you** aren't receiving paid care, "
+            "your household costs (mortgage/taxes/insurance/utilities) and any income/benefits affect affordability."
+        )
+    else:
+        st.caption(
+            "Even if your spouse/partner isn’t receiving paid care, keeping the home "
+            "(mortgage/taxes/insurance/utilities) can affect how affordable your care is. "
+            "Add them to account for household costs. ‘Stay at Home’ means no paid care; "
+            "choose ‘In-Home Care’ if they will receive professional caregiver hours."
+        )
+
+    # Respect previous user choice; Step 1 no longer forces this each rerun
+    include_b = st.checkbox(
+        "Include yourself (as spouse/partner) in this plan?" if st.session_state.get("is_spouse_partner", False)
+        else "Include spouse/partner in this plan?",
+        value=st.session_state.get("include_b", False),
+        key="include_b",
     )
-    include_b_default = st.session_state.get("include_b", False)
-    include_b = st.checkbox("Include spouse/partner in this plan?", value=include_b_default, key="include_b")
 
     if include_b:
         inputs["person_b_in_care"] = True
-        person_b_name = st.text_input("Person B name", value=st.session_state.get("person_b_name", "Partner"), key="person_b_name")
+        # Default Person B name
+        default_b = st.session_state.get("person_b_name", "Partner")
+        person_b_name = st.text_input("Person B name", value=default_b, key="person_b_name")
         st.subheader(f"{person_b_name or 'Person B'} — Care plan")
 
         care_b = st.selectbox(
@@ -346,12 +363,12 @@ if st.session_state.step >= 2:
 
 st.divider()
 
-# ---------- Step 3 (streamlined with custom VA benefits UI) ----------
+# ---------- Step 3 (existing VA logic preserved) ----------
 if st.session_state.step >= 3:
     st.header("Step 3 · Enter financial details")
     st.caption("Open a section to enter details. Leave anything at 0 (or un-checked) if it doesn’t apply.")
 
-    # Maintain-home toggle still controls the Home Carry group
+    # Maintain-home toggle controls the Home Carry group
     keep_home = st.checkbox("Maintain current home while in care?", value=False, key="keep_home")
     inputs["maintain_home_household"] = keep_home
 
@@ -394,11 +411,9 @@ if st.session_state.step >= 3:
             eligible = st.checkbox(f"{person_label}: Qualifies for VA Aid & Attendance?", value=False, key=f"va_elig_{gid}")
             if eligible:
                 choice = st.selectbox(f"{person_label}: VA designation", [t["label"] for t in va_tiers], key=f"va_tier_{gid}")
-                # find monthly
                 monthly = next((t["monthly"] for t in va_tiers if t["label"] == choice), 0.0)
                 st.number_input(f"{person_label}: VA benefit (auto)", min_value=0.0, value=float(monthly), step=50.0,
                                 format="%.2f", key=f"va_amt_{gid}", disabled=True)
-                # write to canonical field label
                 for f in g["fields"]:
                     if "VA benefit" in f.get("label",""):
                         ans[f.get("label")] = monthly
@@ -409,7 +424,7 @@ if st.session_state.step >= 3:
                         ans[f.get("label")] = 0.0
                         break
 
-            # LTC insurance (keep simple boolean)
+            # LTC insurance (boolean)
             for f in g["fields"]:
                 if "LTC insurance" in f.get("label",""):
                     val = st.checkbox(f.get("label"), value=False, key=f"ltc_{gid}")
@@ -448,7 +463,6 @@ if st.session_state.step >= 3:
                 if gid not in groups:
                     continue
                 if gid.startswith("group_benefits"):
-                    # Custom VA flow
                     person_label = name_hint["A"] if gid.endswith("_person_a") else name_hint["B"]
                     ans = render_benefits_group(person_label, gid)
                 else:
@@ -460,9 +474,6 @@ if st.session_state.step >= 3:
 
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=inputs)
-        # Map the standardized answers into compute inputs
-        # (apply_ui_group_answers already maps currency/boolean types correctly)
-        # For VA benefits, ensure canonical keys exist for compute:
         flat_inputs["va_benefit_person_a"] = float(flat_inputs.get("va_benefit_person_a", flat_inputs.get("VA benefit (monthly $)", 0.0)))
         flat_inputs["va_benefit_person_b"] = float(flat_inputs.get("va_benefit_person_b", flat_inputs.get("VA benefit (monthly $) — B", 0.0)))
         res = compute(spec, flat_inputs)
