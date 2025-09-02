@@ -2,9 +2,6 @@ import json
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import streamlit as st
-import pandas as pd
-import altair as alt
-import matplotlib.pyplot as plt
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"  # optional
@@ -19,18 +16,14 @@ def money(x):
 def _read_json(path: str):
     return json.loads(Path(path).read_text())
 
-@st.cache_data
 def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
     spec = _read_json(base_path)
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path)
-        # Merge lookups (shallow)
         if overlay.get("lookups"):
             spec.setdefault("lookups", {}).update(overlay["lookups"])
-        # Add/override top-level modules
         if overlay.get("modules"):
             spec["modules"] = overlay["modules"]
-        # Apply ui_group overrides
         overrides = overlay.get("ui_group_overrides", {})
         gid_to_group = {g["id"]: g for g in spec.get("ui_groups", [])}
         for gid, ov in overrides.items():
@@ -44,13 +37,10 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
             for f in g.get("fields", []):
                 label = f.get("label", f["field"])
                 this_ov = field_ovs.get(label, {})
-                # wildcard defaults
                 for k, v in wildcard.items():
                     f.setdefault(k, v)
-                # specific overrides
                 for k, v in this_ov.items():
                     f[k] = v
-        # Ensure optional + skip_value semantics
         for g in spec.get("ui_groups", []):
             for f in g.get("fields", []):
                 kind = f.get("kind", "currency")
@@ -70,7 +60,6 @@ def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
         cfg = groups.get(gid)
         if not cfg:
             continue
-        # Respect conditional groups against current flat state
         cond = cfg.get("condition")
         if cond and flat.get(cond.get("field")) != cond.get("equals"):
             continue
@@ -110,7 +99,6 @@ def compute(spec, inputs):
         mobility_fac = lookups["mobility_adders"]["facility"].get(mobility, 0)
         mobility_home = lookups["mobility_adders"]["in_home"].get(mobility, 0)
         chronic_add = lookups["chronic_adders"].get(chronic, 0)
-        # New: Apply state multiplier if provided
         state_mult = lookups["state_multipliers"].get(inputs.get("state", "National"), 1.0)
         if care_type == "In-Home Care (professional staff such as nurses, CNAs, or aides)":
             hours = str(inputs.get(f"hours_per_day_person_{person}", "0"))
@@ -124,8 +112,8 @@ def compute(spec, inputs):
                 base_room *= settings["memory_care_multiplier"]
             facility_cost = base_room + care_level_add + mobility_fac + chronic_add
             return money(facility_cost * state_mult)
-        else:
-            return 0.0
+        return 0.0
+
     def shared_unit_adjustment():
         if not (inputs.get("person_a_in_care") and inputs.get("person_b_in_care")):
             return 0.0
@@ -141,11 +129,11 @@ def compute(spec, inputs):
                 room_base_b *= spec["settings"]["memory_care_multiplier"]
             return money(room_base_b - spec["settings"]["second_person_cost"])
         return 0.0
+
     a_selected = per_person_cost("a") if inputs.get("person_a_in_care") else 0.0
     b_selected = per_person_cost("b") if inputs.get("person_b_in_care") else 0.0
     shared_adj = shared_unit_adjustment()
     care_cost_total = money(a_selected + b_selected - shared_adj)
-    # Optional costs include HELOC payment if any + new overlooked costs
     optional_fields = ["optional_rx","optional_personal_care","optional_phone_internet","optional_life_insurance",
                        "optional_transportation","optional_family_travel","optional_auto","optional_auto_insurance",
                        "optional_other","heloc_payment_monthly", "medicare_premiums", "dental_vision_hearing",
@@ -157,9 +145,8 @@ def compute(spec, inputs):
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
-    # Re-investment + HECM + HELOC draw flow into income + new investment returns
     reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0) + inputs.get("heloc_draw_monthly", 0.0)
-    investment_returns = inputs.get("other_assets", 0.0) * (inputs.get("investment_return_rate", 0.04) / 12)  # Monthly return
+    investment_returns = inputs.get("other_assets", 0.0) * (inputs.get("investment_return_rate", 0.04) / 12)
     reinv += investment_returns
     household_income = sum([
         inputs.get("social_security_person_a", 0.0),
@@ -168,23 +155,18 @@ def compute(spec, inputs):
         inputs.get("pension_person_b", 0.0),
         reinv
     ]) + va_total + ltc_total
-    # New: Subtract estimated taxes
-    tax_rate = inputs.get("estimated_tax_rate", 0.15)  # Default 15%
+    tax_rate = inputs.get("estimated_tax_rate", 0.15)
     household_income_after_tax = household_income * (1 - tax_rate)
     monthly_cost_full = care_cost_total + house_cost_total + optional_sum
     monthly_gap = max(0.0, monthly_cost_full - household_income_after_tax)
     total_assets = inputs.get("home_equity", 0.0) + inputs.get("other_assets", 0.0)
-    # New: Inflation-adjusted years funded
-    inflation_rate = inputs.get("inflation_rate", 0.03)  # Default 3%
+    inflation_rate = inputs.get("inflation_rate", 0.03)
     if monthly_gap <= 0:
         display_years = spec["settings"]["display_cap_years_funded"]
     else:
-        # Approximate years with inflation: use formula for growing annuity
         if inflation_rate > 0:
-            effective_rate = (inputs.get("investment_return_rate", 0.04) - inflation_rate) / (1 + inflation_rate)
-            years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")  # Base, then adjust
-            # Simple projection: reduce by inflation factor
-            years_funded /= (1 + inflation_rate)  # Conservative estimate
+            years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
+            years_funded /= (1 + inflation_rate)
         else:
             years_funded = total_assets / (monthly_gap * 12) if monthly_gap > 0 else float("inf")
         display_years = min(years_funded, spec["settings"]["display_cap_years_funded"])
@@ -197,12 +179,7 @@ def compute(spec, inputs):
         "care_cost_total": care_cost_total,
         "house_cost_total": house_cost_total,
         "optional_sum": optional_sum,
-        # For visuals
-        "breakdown": {
-            "Care": care_cost_total,
-            "Home": house_cost_total,
-            "Optional": optional_sum
-        }
+        "breakdown": {"Care": care_cost_total, "Home": house_cost_total, "Optional": optional_sum}
     }
 
 # ---------- UI Setup ----------
@@ -223,7 +200,7 @@ if "grouped_answers" not in st.session_state:
     st.session_state.grouped_answers = {}
 
 st.title("Senior Care Cost Planner")
-st.markdown("Let's plan step by step. We'll ask intuitive questions to estimate costs, income, and funding.")
+st.markdown("Let's plan step by step. We'll estimate costs, income, and funding.")
 
 # Step 1: Who and Strategy
 if st.session_state.step == 1:
@@ -256,8 +233,6 @@ elif st.session_state.step == 2:
     if st.session_state.get("include_b", False):
         person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?")
         st.session_state.inputs["person_b_in_care"] = person_b_in_care
-    else:
-        person_b_in_care = False
     if person_a_in_care or person_b_in_care:
         share_unit = st.checkbox("Will they share a unit/room if in facility care?")
         st.session_state.inputs["share_one_unit"] = share_unit
@@ -282,11 +257,11 @@ elif st.session_state.step == 2:
     if st.button("Next"):
         st.session_state.step = 3
 
-# Step 3: Financials (Income, Benefits, Expenses, Assets)
+# Step 3: Financials
 elif st.session_state.step == 3:
     st.header("Step 3: Financial Details")
     with st.form("finance_form"):
-        for cat, gids in spec.get("category_map", {}).items():  # Assume added to spec
+        for cat, gids in spec.get("category_map", {}).items():
             st.markdown(f"### {cat}")
             for gid in gids:
                 if gid.endswith("_person_b") and not st.session_state.get("include_b"):
@@ -294,42 +269,37 @@ elif st.session_state.step == 3:
                 if gid not in groups:
                     continue
                 person_label = st.session_state.name_hint.get("A" if "person_a" in gid else "B", "Person")
-                # Render with tooltips
                 g = groups[gid]
-                with st.expander(f"{g['label'].replace('Person A', person_label).replace('Person B', person_label)}", expanded=True):
+                with st.expander(f"{g['label'].replace('Person A', person_label).replace('Person B', person_label)}"):
                     st.caption(g.get("prompt", ""))
                     ans = {}
                     for f in g["fields"]:
                         label = f.get("label", f["field"])
                         kind = f.get("kind", "currency")
                         default = f.get("default", 0)
-                        tooltip = f.get("tooltip", "")  # New field in JSON
+                        tooltip = f.get("tooltip", "")
                         if tooltip:
                             st.caption(tooltip)
                         if kind == "boolean":
                             v = st.checkbox(label, value=default == "Yes")
                             ans[label] = v
                         elif kind == "select":
-                            v = st.selectbox(label, f["options"])
-                            ans[label] = v
-                        elif kind == "slider":
-                            v = st.slider(label, f["min"], f["max"], default)
+                            v = st.selectbox(label, f.get("options", []))
                             ans[label] = v
                         else:
                             v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
                             ans[label] = v
                     st.session_state.grouped_answers[gid] = ans
-        # New global inputs
         st.subheader("Advanced Adjustments")
-        inflation_rate = st.slider("Expected annual inflation rate (%)", 0.0, 10.0, 3.0) / 100
+        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0) / 100
         st.session_state.inputs["inflation_rate"] = inflation_rate
-        investment_return_rate = st.slider("Expected annual return on assets (%)", 0.0, 10.0, 4.0) / 100
+        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0) / 100
         st.session_state.inputs["investment_return_rate"] = investment_return_rate
-        estimated_tax_rate = st.slider("Estimated tax rate on income (%)", 0.0, 30.0, 15.0) / 100
+        estimated_tax_rate = st.slider("Tax rate on income (%)", 0.0, 30.0, 15.0) / 100
         st.session_state.inputs["estimated_tax_rate"] = estimated_tax_rate
         submitted = st.form_submit_button("Calculate")
     if submitted:
-        flat_inputs = apply_ui_group_answers(groups_cfg, st.session_state.grouped_answers, existing_fields=st.session_state.inputs)
+        flat_inputs = apply_ui_group_answers(groups_cfg, st.session_state.grouped_answers, st.session_state.inputs)
         res = compute(spec, flat_inputs)
         st.session_state.res = res
         st.session_state.step = 4
@@ -346,16 +316,7 @@ elif st.session_state.step == 4:
     with col3:
         st.metric("Monthly Gap", f"${res['monthly_gap']:,.2f}")
     st.metric("Total Assets", f"${res['total_assets']:,.2f}")
-    st.metric("Estimated Years Funded (with inflation, cap 30)", res['years_funded_cap30'] or "N/A")
-    # Visuals
-    st.subheader("Cost Breakdown")
-    breakdown_df = pd.DataFrame(list(res["breakdown"].items()), columns=["Category", "Amount"])
-    chart = alt.Chart(breakdown_df).mark_arc().encode(
-        theta="Amount",
-        color="Category",
-        tooltip=["Category", "Amount"]
-    ).interactive()
-    st.altair_chart(chart, use_container_width=True)
+    st.metric("Years Funded (cap 30)", res['years_funded_cap30'] or "N/A")
     if st.button("Restart"):
         st.session_state.step = 1
         st.session_state.inputs = {}
