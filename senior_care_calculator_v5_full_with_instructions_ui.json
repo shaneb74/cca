@@ -22,9 +22,14 @@
     },
     "care_level_adders": {
       "Low": 0,
-      "Medium": 800,
-      "High": 1600
+      "tooltip": "Basic assistance with daily tasks like bathing or dressing."
     },
+    "Medium": 800,
+    "tooltip": "Moderate help with mobility, hygiene, or medication management."
+  },
+  "High": 1600,
+  "tooltip": "Extensive care for complex needs like dementia or full dependency."
+},
     "mobility_adders": {
       "facility": {
         "None": 0,
@@ -43,11 +48,6 @@
       "Multiple conditions (complex)": 700
     },
     "va_tiers": [
-      {
-        "id": "not_applicable",
-        "label": "Not applicable",
-        "monthly": 0
-      },
       {
         "id": "veteran_alone",
         "label": "Veteran (no spouse)",
@@ -68,46 +68,35 @@
         "label": "Two married veterans",
         "monthly": 2865
       }
-    ],
-    "state_multipliers": {
-      "National": 1.0,
-      "California": 1.3,
-      "New York": 1.25,
-      "Texas": 0.95
-    }
+    ]
   },
   "intro_flow": {
     "q1_who": {
       "id": "who_planning_for",
       "label": "Who are you planning care for?",
       "type": "radio",
-      "options": ["Myself", "Spouse or Partner", "Parent or Loved One", "A Couple (both parents)"]
+      "options": [
+        "Myself",
+        "Spouse or Partner",
+        "Parent or Loved One",
+        "A Couple (both parents)"
+      ]
     },
-    "q2_relationship": {
-      "id": "relationship_to_person",
-      "label": "What is your relationship to the person you're planning care for?",
-      "type": "select",
-      "options": ["Spouse / Partner", "Parent / Parent-in-law", "Other relative / POA", "Friend / Other"],
-      "condition": {
-        "field": "who_planning_for",
-        "equals": "Parent or Loved One"
-      }
-    },
-    "q3_names": {
+    "q2_names": {
       "id": "names",
       "fields": [
         {
-          "field": "care_recipient_name",
-          "label": "Care recipient name",
+          "field": "care_recipient_name_a",
+          "label": "Name of Person A",
           "kind": "text"
         },
         {
-          "field": "planner_name",
-          "label": "Your name (if different)",
+          "field": "care_recipient_name_b",
+          "label": "Name of Person B (spouse or partner)",
           "kind": "text",
           "condition": {
             "field": "who_planning_for",
-            "equals": "Parent or Loved One"
+            "equals": "A Couple (both parents)"
           }
         }
       ]
@@ -116,30 +105,55 @@
   },
   "ui_groups": [
     {
+      "id": "group_care_type",
+      "label": "Recommended Care Type",
+      "prompt": "Select the recommended living scenario.",
+      "fields": [
+        {
+          "field": "recommended_care_type",
+          "label": "Care Type",
+          "kind": "select",
+          "options": [
+            "In-Home Care",
+            "Assisted Living",
+            "Memory Care"
+          ],
+          "tooltip": "Choose based on needs: In-Home for independent living with help, Assisted for social environment, Memory for dementia support."
+        }
+      ],
+      "module": "care"
+    },
+    {
+      "id": "group_income_household",
+      "label": "Household Income",
+      "prompt": "Enter shared monthly income sources.",
+      "fields": [
+        {
+          "field": "re_investment_income",
+          "label": "Investments/Other household income",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Income from investments or other shared sources."
+        }
+      ],
+      "module": "income"
+    },
+    {
       "id": "group_income_person_a",
       "label": "Income — Person A",
-      "prompt": "What are the monthly income sources for this person?",
+      "prompt": "Monthly income for Person A.",
       "fields": [
         {
           "field": "social_security_person_a",
           "label": "Social Security",
           "kind": "currency",
-          "default": 0,
-          "tooltip": "Monthly benefit from Social Security."
+          "default": 0
         },
         {
           "field": "pension_person_a",
           "label": "Pension",
           "kind": "currency",
-          "default": 0,
-          "tooltip": "Monthly pension payments."
-        },
-        {
-          "field": "re_investment_income",
-          "label": "Investments/Other",
-          "kind": "currency",
-          "default": 0,
-          "tooltip": "Income from investments or other sources."
+          "default": 0
         }
       ],
       "module": "income"
@@ -147,7 +161,7 @@
     {
       "id": "group_income_person_b",
       "label": "Income — Person B",
-      "prompt": "Monthly income for the spouse/partner.",
+      "prompt": "Monthly income for Person B.",
       "condition": {
         "field": "include_b",
         "equals": true
@@ -171,11 +185,17 @@
     {
       "id": "group_benefits_person_a",
       "label": "Benefits — Person A",
-      "prompt": "Any VA benefits or long-term care insurance?",
+      "prompt": "Benefits for Person A.",
       "fields": [
         {
+          "field": "va_benefit_person_a",
+          "label": "VA benefit (monthly $)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
           "field": "ltc_insurance_person_a",
-          "label": "Has Long-Term Care Insurance?",
+          "label": "LTC insurance — A",
           "kind": "boolean",
           "true_value": "Yes",
           "false_value": "No",
@@ -187,15 +207,21 @@
     {
       "id": "group_benefits_person_b",
       "label": "Benefits — Person B",
-      "prompt": "Benefits for the spouse/partner.",
+      "prompt": "Benefits for Person B.",
       "condition": {
         "field": "include_b",
         "equals": true
       },
       "fields": [
         {
+          "field": "va_benefit_person_b",
+          "label": "VA benefit (monthly $) — B",
+          "kind": "currency",
+          "default": 0
+        },
+        {
           "field": "ltc_insurance_person_b",
-          "label": "Has Long-Term Care Insurance?",
+          "label": "LTC insurance — B",
           "kind": "boolean",
           "true_value": "Yes",
           "false_value": "No",
@@ -206,8 +232,8 @@
     },
     {
       "id": "group_home_carry",
-      "label": "Home Maintenance Costs",
-      "prompt": "Ongoing costs if keeping the home.",
+      "label": "Home Carry Costs (Household)",
+      "prompt": "Ongoing monthly costs if maintaining the home.",
       "condition": {
         "field": "maintain_home_household",
         "equals": true
@@ -215,25 +241,25 @@
       "fields": [
         {
           "field": "mortgage",
-          "label": "Mortgage Payment",
+          "label": "Mortgage",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "taxes",
-          "label": "Property Taxes",
+          "label": "Property taxes",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "insurance",
-          "label": "Home Insurance",
+          "label": "Home insurance",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "hoa",
-          "label": "HOA Fees",
+          "label": "HOA",
           "kind": "currency",
           "default": 0
         },
@@ -247,189 +273,102 @@
       "module": "house_carry"
     },
     {
-      "id": "group_optional_costs",
-      "label": "Everyday Expenses",
-      "prompt": "Common monthly costs that continue.",
-      "fields": [
-        {
-          "field": "optional_rx",
-          "label": "Prescriptions/Medical Supplies",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_personal_care",
-          "label": "Personal Care/Toiletries",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_phone_internet",
-          "label": "Phone/Internet/Streaming",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_life_insurance",
-          "label": "Life Insurance Premiums",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_transportation",
-          "label": "Transportation (Rides, Gas)",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_family_travel",
-          "label": "Family Visits/Travel",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_auto",
-          "label": "Auto Maintenance",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_auto_insurance",
-          "label": "Auto Insurance",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "optional_other",
-          "label": "Other (e.g., Gifts)",
-          "kind": "currency",
-          "default": 0
-        }
-      ],
-      "module": "optional_costs"
-    },
-    {
-      "id": "group_healthcare_extras",
-      "label": "Healthcare Extras",
-      "prompt": "Costs not covered by basic insurance.",
-      "fields": [
-        {
-          "field": "medicare_premiums",
-          "label": "Medicare/Medigap Premiums",
-          "kind": "currency",
-          "default": 0,
-          "tooltip": "Monthly out-of-pocket costs for Medicare or Medigap plans."
-        },
-        {
-          "field": "dental_vision_hearing",
-          "label": "Dental/Vision/Hearing",
-          "kind": "currency",
-          "default": 0,
-          "tooltip": "Costs for dental, vision, or hearing aids not covered by insurance."
-        }
-      ],
-      "module": "healthcare"
-    },
-    {
       "id": "group_home_mods",
-      "label": "Home Modifications",
-      "prompt": "Costs for safety updates if staying home.",
+      "label": "Home Modifications (One-Time Cost)",
+      "prompt": "Estimated one-time costs for safety updates if aging in place.",
       "condition": {
         "field": "maintain_home_household",
         "equals": true
       },
       "fields": [
         {
-          "field": "home_modifications_monthly",
-          "label": "Monthly Cost (e.g., financed ramps/grab bars)",
+          "field": "home_modifications_one_time",
+          "label": "Total One-Time Home Modification Cost",
           "kind": "currency",
           "default": 0,
-          "tooltip": "Estimated monthly payment for home modifications like ramps or grab bars."
+          "tooltip": "Average costs: Wheelchair ramp $1,000–$3,000, Grab bars $150–$350 each, Stairlift $3,000–$7,000, Bathroom remodel $6,000–$25,000. Enter estimated total."
         }
       ],
       "module": "house_carry"
     },
     {
-      "id": "group_other_debts",
-      "label": "Other Debts",
-      "prompt": "Any additional monthly payments.",
+      "id": "group_optional_costs_household",
+      "label": "Optional Monthly Costs (Household)",
+      "prompt": "Common recurring costs that may continue.",
       "fields": [
         {
-          "field": "other_debts_monthly",
-          "label": "Loans/Credit Cards",
+          "field": "optional_rx",
+          "label": "Prescriptions / medical supplies",
           "kind": "currency",
-          "default": 0,
-          "tooltip": "Monthly payments for loans or credit card debt."
-        }
-      ],
-      "module": "debts"
-    },
-    {
-      "id": "group_lifestyle",
-      "label": "Lifestyle Extras",
-      "prompt": "Fun and support costs.",
-      "fields": [
-        {
-          "field": "pet_care",
-          "label": "Pet Care (food/vet)",
-          "kind": "currency",
-          "default": 0,
-          "tooltip": "Monthly costs for pet food, vet visits, or care."
+          "default": 0
         },
         {
-          "field": "entertainment_hobbies",
-          "label": "Entertainment/Hobbies",
+          "field": "optional_personal_care",
+          "label": "Personal care / toiletries",
           "kind": "currency",
-          "default": 0,
-          "tooltip": "Expenses for entertainment or hobbies."
+          "default": 0
+        },
+        {
+          "field": "optional_phone_internet",
+          "label": "Phone & internet",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_life_insurance",
+          "label": "Life insurance premiums",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_transportation",
+          "label": "Transportation (public/ride-hail)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_family_travel",
+          "label": "Family travel/visits",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_auto",
+          "label": "Auto expenses (fuel/maint)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_auto_insurance",
+          "label": "Auto insurance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "optional_other",
+          "label": "Other",
+          "kind": "currency",
+          "default": 0
         }
       ],
       "module": "optional_costs"
     },
     {
       "id": "group_assets",
-      "label": "Assets Available",
-      "prompt": "Resources to fund the plan.",
+      "label": "Assets",
+      "prompt": "Assets available to help fund care.",
       "fields": [
         {
           "field": "home_equity",
-          "label": "Home Equity (if selling)",
+          "label": "Home equity (available)",
           "kind": "currency",
-          "default": 0,
-          "condition": {
-            "field": "home_to_assets",
-            "equals": true
-          },
-          "tooltip": "Value of home equity available if sold."
+          "default": 0
         },
         {
           "field": "other_assets",
-          "label": "Savings/Investments",
+          "label": "Other liquid assets",
           "kind": "currency",
-          "default": 0,
-          "tooltip": "Liquid assets like savings, 401k, or investments."
-        },
-        {
-          "field": "hecm_draw_monthly",
-          "label": "Reverse Mortgage (HECM) Monthly Draw",
-          "kind": "currency",
-          "default": 0,
-          "condition": {
-            "field": "home_plan",
-            "equals": "Yes, use reverse mortgage (HECM)"
-          },
-          "tooltip": "Monthly amount drawn from a reverse mortgage."
-        },
-        {
-          "field": "heloc_payment_monthly",
-          "label": "HELOC Monthly Payment",
-          "kind": "currency",
-          "default": 0,
-          "condition": {
-            "field": "home_plan",
-            "equals": "Yes, use home equity line of credit (HELOC)"
-          },
-          "tooltip": "Monthly payment for a home equity line of credit."
+          "default": 0
         }
       ],
       "module": "assets"
@@ -438,7 +377,7 @@
   "modules": [
     {
       "id": "income",
-      "label": "Income Sources",
+      "label": "Income",
       "default_selected": true
     },
     {
@@ -448,7 +387,7 @@
     },
     {
       "id": "house_carry",
-      "label": "Home Costs",
+      "label": "House carry (mortgage/taxes/etc.)",
       "default_selected": false,
       "condition": {
         "field": "maintain_home_household",
@@ -457,17 +396,7 @@
     },
     {
       "id": "optional_costs",
-      "label": "Everyday Expenses",
-      "default_selected": true
-    },
-    {
-      "id": "healthcare",
-      "label": "Healthcare Extras",
-      "default_selected": true
-    },
-    {
-      "id": "debts",
-      "label": "Debts",
+      "label": "Optional monthly costs",
       "default_selected": true
     },
     {
@@ -477,14 +406,14 @@
     }
   ],
   "ui_contract": {
-    "modules": "Render sections step-by-step; use tooltips for explanations.",
-    "groups": "Group fields intuitively with captions; respect conditions.",
-    "intro_flow": "Used for Step 1."
+    "modules": "Render a checkbox per module; only render groups for modules that are checked; respect module.condition if present.",
+    "groups": "Within each rendered group, show an 'Include' checkbox for each field. If not included, write field.skip_value.",
+    "intro_flow": "Frontends may render q1_who -> q2_names before cost sections."
   },
   "category_map": {
-    "Income & Benefits": ["group_income_person_a", "group_income_person_b", "group_benefits_person_a", "group_benefits_person_b"],
-    "Home & Modifications": ["group_home_carry", "group_home_mods"],
-    "Expenses & Debts": ["group_optional_costs", "group_healthcare_extras", "group_other_debts", "group_lifestyle"],
+    "Household": ["group_income_household", "group_home_carry", "group_optional_costs_household"],
+    "Person A": ["group_income_person_a", "group_benefits_person_a"],
+    "Person B": ["group_income_person_b", "group_benefits_person_b"],
     "Assets": ["group_assets"]
   }
 }
