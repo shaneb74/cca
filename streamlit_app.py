@@ -163,7 +163,6 @@ def compute(spec, inputs):
     ltc_total = (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (settings["ltc_monthly_add"] if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
 
-    # Add HECM draw (reverse mortgage) into re-investment income if present
     reinv = inputs.get("re_investment_income", 0.0) + inputs.get("hecm_draw_monthly", 0.0)
 
     household_income = sum([
@@ -282,8 +281,9 @@ if st.session_state.step >= 2:
 
     if st.session_state.get("is_spouse_partner", False):
         st.caption(
-            f"You're planning for **{care_recipient or 'your spouse'}**. Even if **you** aren't receiving paid care, "
-            "your household costs and any income/benefits affect affordability."
+            f"You're planning for **{care_recipient or 'your spouse'}**’s senior living care. "
+            "Even if **you** won’t receive paid care, your own household costs and any income/benefits "
+            "can affect overall affordability. Keep your ongoing needs in mind as you build this plan."
         )
     else:
         st.caption(
@@ -320,23 +320,23 @@ if st.session_state.step >= 2:
             "Assisted Living (or Adult Family Home)", "Memory Care"
         ]
 
-        # New: Home strategy when planner is the spouse (or whenever Person B is included)
-        # Only show when Person B is "Stay at Home", since that's the real decision point.
+        # Home strategy (safe keys: widget uses *_radio; store final choice under 'home_plan_choice')
         if care_b == "Stay at Home (no paid care)":
             st.markdown("**Home while your partner is in care**")
-            home_strategy = st.radio(
+            home_strategy_choice = st.radio(
                 "What do you plan to do with the home while care is provided?",
                 ["Keep living in the home (maintain)",
                  "Sell the home",
                  "Use a reverse mortgage / HECM"],
-                index=0, key="home_strategy"
+                index=0, key="home_strategy_radio"
             )
-            st.session_state.home_strategy = home_strategy
-            if home_strategy == "Keep living in the home (maintain)":
+            # derive flags from the choice without writing over the widget key
+            st.session_state["home_plan_choice"] = home_strategy_choice
+            if home_strategy_choice == "Keep living in the home (maintain)":
                 st.session_state.keep_home = True
                 st.session_state.home_to_assets = False
                 st.session_state.expect_hecm = False
-            elif home_strategy == "Sell the home":
+            elif home_strategy_choice == "Sell the home":
                 st.session_state.keep_home = False
                 st.session_state.home_to_assets = True
                 st.session_state.expect_hecm = False
@@ -391,9 +391,9 @@ if st.session_state.step >= 3:
 
     # Use derived home strategy instead of a free checkbox
     keep_home = bool(st.session_state.get("keep_home", False))
-    home_strategy = st.session_state.get("home_strategy")
-    if home_strategy:
-        st.info(f"Home plan: **{home_strategy}**")
+    home_choice = st.session_state.get("home_plan_choice")
+    if home_choice:
+        st.info(f"Home plan: **{home_choice}**")
     inputs["maintain_home_household"] = keep_home
 
     modules = spec.get("modules")
@@ -480,7 +480,6 @@ if st.session_state.step >= 3:
 
     grouped_answers = {}
     with st.form("finance_form"):
-        # Optional HECM draw quick input (kept outside groups)
         if st.session_state.get("expect_hecm", False):
             st.markdown("### Home financing (reverse mortgage)")
             hecm = st.number_input("Expected monthly reverse mortgage/HECM draw", min_value=0.0, value=0.0, step=100.0, format="%.2f", key="hecm_draw")
@@ -505,10 +504,8 @@ if st.session_state.step >= 3:
 
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, {k:v for k,v in grouped_answers.items() if not k.startswith("_")}, existing_fields=inputs)
-        # Inject HECM draw if any
         hecm_draw = grouped_answers.get("_hecm_draw", {}).get("hecm_draw_monthly", 0.0)
         flat_inputs["hecm_draw_monthly"] = float(hecm_draw or 0.0)
-        # VA mapping safeguard
         flat_inputs["va_benefit_person_a"] = float(flat_inputs.get("va_benefit_person_a", flat_inputs.get("VA benefit (monthly $)", 0.0)))
         flat_inputs["va_benefit_person_b"] = float(flat_inputs.get("va_benefit_person_b", flat_inputs.get("VA benefit (monthly $) — B", 0.0)))
         res = compute(spec, flat_inputs)
