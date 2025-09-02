@@ -223,52 +223,53 @@ if st.session_state.step == 1:
     who = st.radio("Who are you planning for?", ["Myself", "Spouse or Partner", "Parent or Loved One", "A Couple (both parents)"])
     st.session_state.include_b = who == "A Couple (both parents)"
     if who == "A Couple (both parents)":
-        name_a = st.text_input("Name for first person", value="Person A")
-        name_b = st.text_input("Name for second person", value="Person B")
+        name_a = st.text_input("Name for first person", value="Person A", key="name_a_step1")
+        name_b = st.text_input("Name for second person", value="Person B", key="name_b_step1")
         st.session_state.name_hint = {"A": name_a, "B": name_b}
     else:
-        name_a = st.text_input("Name of the person", value="Person A")
+        name_a = st.text_input("Name of the person", value="Person A", key="name_a_step1_single")
         st.session_state.name_hint = {"A": name_a, "B": "Person B"}
-    state = st.selectbox("State (for cost adjustments)", list(lookups.get("state_multipliers", {}).keys()), index=0)
+    state = st.selectbox("State (for cost adjustments)", list(lookups.get("state_multipliers", {}).keys()), index=0, key="state_step1")
     st.session_state.inputs["state"] = state
     home_plan = st.radio("Do you plan to use the sale of the home or home equity to pay for care?", ["No, keep the home without using equity", "Yes, sell the home", "Yes, use reverse mortgage (HECM)", "Yes, use home equity line of credit (HELOC)"])
     st.session_state.maintain_home_household = home_plan != "Yes, sell the home"
     st.session_state.home_to_assets = home_plan == "Yes, sell the home"
     st.session_state.home_plan = home_plan  # Save for potential logic in Step 3 (e.g., show HECM/HELOC fields)
-    if st.button("Next"):
+    if st.button("Next", key="next_step1"):
         st.session_state.step = 2
 
 # Step 2: Care Needs
 elif st.session_state.step == 2:
     st.header("Step 2: Care Needs")
-    person_a_in_care = st.checkbox(f"Does {st.session_state.name_hint['A']} need care?", value=True)
+    person_a_in_care = st.checkbox(f"Does {st.session_state.name_hint['A']} need care?", value=True, key="person_a_in_care_step2")
     st.session_state.inputs["person_a_in_care"] = person_a_in_care
     person_b_in_care = False  # Default to False if include_b is False
     if st.session_state.get("include_b", False):
-        person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?")
+        person_b_in_care = st.checkbox(f"Does {st.session_state.name_hint['B']} need care?", key="person_b_in_care_step2")
     st.session_state.inputs["person_b_in_care"] = person_b_in_care
     if person_a_in_care or person_b_in_care:
-        share_unit = st.checkbox("Will they share a unit/room if in facility care?")
+        share_unit = st.checkbox("Will they share a unit/room if in facility care?", key="share_unit_step2")
         st.session_state.inputs["share_one_unit"] = share_unit
     for person, in_care in [("a", person_a_in_care), ("b", person_b_in_care)]:
         if in_care:
             name = st.session_state.name_hint["A" if person == "a" else "B"]
-            st.subheader(f"Care for {name}")
-            care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"], key=f"care_type_person_{person}")
-            st.session_state.inputs[f"care_type_person_{person}"] = care_type
-            if "In-Home" in care_type:
-                hours = st.slider(f"Hours per day for {name}", 0, 24, 8, key=f"hours_per_day_person_{person}")
-                st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
-            else:
-                room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()), key=f"room_type_person_{person}")
-                st.session_state.inputs[f"room_type_person_{person}"] = room_type
-            care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()), key=f"care_level_person_{person}")
-            st.session_state.inputs[f"care_level_person_{person}"] = care_level
-            mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()), key=f"mobility_person_{person}")
-            st.session_state.inputs[f"mobility_person_{person}"] = mobility
-            chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()), key=f"chronic_person_{person}")
-            st.session_state.inputs[f"chronic_person_{person}"] = chronic
-    if st.button("Next"):
+            with st.container():
+                st.subheader(f"Care for {name}")
+                care_type = st.selectbox(f"Care type for {name}", ["In-Home Care (professional staff such as nurses, CNAs, or aides)", "Assisted Living (or Adult Family Home)", "Memory Care"], key=f"care_type_person_{person}_step2")
+                st.session_state.inputs[f"care_type_person_{person}"] = care_type
+                if "In-Home" in care_type:
+                    hours = st.slider(f"Hours per day for {name}", 0, 24, 8, key=f"hours_per_day_person_{person}_step2")
+                    st.session_state.inputs[f"hours_per_day_person_{person}"] = hours
+                else:
+                    room_type = st.selectbox(f"Room type for {name}", list(lookups.get("room_type", {}).keys()), key=f"room_type_person_{person}_step2")
+                    st.session_state.inputs[f"room_type_person_{person}"] = room_type
+                care_level = st.selectbox(f"Care level for {name}", list(lookups.get("care_level_adders", {}).keys()), key=f"care_level_person_{person}_step2")
+                st.session_state.inputs[f"care_level_person_{person}"] = care_level
+                mobility = st.selectbox(f"Mobility needs for {name}", list(lookups.get("mobility_adders", {}).get("facility", {}).keys()), key=f"mobility_person_{person}_step2")
+                st.session_state.inputs[f"mobility_person_{person}"] = mobility
+                chronic = st.selectbox(f"Chronic conditions for {name}", list(lookups.get("chronic_adders", {}).keys()), key=f"chronic_person_{person}_step2")
+                st.session_state.inputs[f"chronic_person_{person}"] = chronic
+    if st.button("Next", key="next_step2"):
         st.session_state.step = 3
 
 # Step 3: Financials
@@ -295,23 +296,30 @@ elif st.session_state.step == 3:
                         if tooltip:
                             st.caption(tooltip)
                         if kind == "boolean":
-                            v = st.checkbox(label, value=default == "Yes")
+                            v = st.checkbox(label, value=default == "Yes", key=f"checkbox_{gid}_{label}_step3")
                             ans[label] = v
                         elif kind == "select":
-                            v = st.selectbox(label, f.get("options", []))
+                            v = st.selectbox(label, f.get("options", []), key=f"select_{gid}_{label}_step3")
                             ans[label] = v
                         else:
-                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
+                            v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", key=f"number_{gid}_{label}_step3")
                             ans[label] = v
+                    if gid.startswith("group_benefits"):
+                        tier_options = [t["label"] for t in lookups.get("va_tiers", [])]
+                        selected_tier = st.selectbox("Select VA Benefit Tier", tier_options, key=f"va_tier_{gid}_step3")
+                        selected_monthly = next((t["monthly"] for t in lookups.get("va_tiers", []) if t["label"] == selected_tier), 0)
+                        st.caption(f"Based on selected tier, monthly benefit set to ${selected_monthly:,.2f}. Consult VA for exact amount and eligibility.")
+                        va_field = "va_benefit_person_a" if "a" in gid else "va_benefit_person_b"
+                        ans["VA benefit (monthly $)"] = selected_monthly  # Adjust label if needed to match JSON
                     st.session_state.grouped_answers[gid] = ans
         st.subheader("Advanced Adjustments")
-        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0) / 100
+        inflation_rate = st.slider("Annual inflation rate (%)", 0.0, 10.0, 3.0, key="inflation_rate_step3") / 100
         st.session_state.inputs["inflation_rate"] = inflation_rate
-        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0) / 100
+        investment_return_rate = st.slider("Annual return on assets (%)", 0.0, 10.0, 4.0, key="investment_return_rate_step3") / 100
         st.session_state.inputs["investment_return_rate"] = investment_return_rate
-        estimated_tax_rate = st.slider("Estimated tax rate on income (%)", 0.0, 30.0, 15.0) / 100
+        estimated_tax_rate = st.slider("Estimated tax rate on income (%)", 0.0, 30.0, 15.0, key="estimated_tax_rate_step3") / 100
         st.session_state.inputs["estimated_tax_rate"] = estimated_tax_rate
-        submitted = st.form_submit_button("Calculate")
+        submitted = st.form_submit_button("Calculate", key="calculate_step3")
     if submitted:
         flat_inputs = apply_ui_group_answers(groups_cfg, st.session_state.grouped_answers, st.session_state.inputs)
         res = compute(spec, flat_inputs)
@@ -331,7 +339,7 @@ elif st.session_state.step == 4:
         st.metric("Monthly Gap", f"${res['monthly_gap']:,.2f}")
     st.metric("Total Assets", f"${res['total_assets']:,.2f}")
     st.metric("Estimated Years Funded (with inflation, cap 30)", res['years_funded_cap30'] or "N/A")
-    if st.button("Restart"):
+    if st.button("Restart", key="restart_step4"):
         st.session_state.step = 1
         st.session_state.inputs = {}
         st.session_state.grouped_answers = {}
