@@ -41,7 +41,29 @@
       "None": 0,
       "Some conditions (manageable)": 300,
       "Multiple conditions (complex)": 700
-    }
+    },
+    "va_tiers": [
+      {
+        "id": "veteran_alone",
+        "label": "Veteran (no spouse)",
+        "monthly": 0
+      },
+      {
+        "id": "veteran_with_spouse",
+        "label": "Veteran with spouse",
+        "monthly": 0
+      },
+      {
+        "id": "surviving_spouse",
+        "label": "Surviving spouse",
+        "monthly": 0
+      },
+      {
+        "id": "two_veterans_married",
+        "label": "Two married veterans",
+        "monthly": 0
+      }
+    ]
   },
   "intro_flow": {
     "q1_who": {
