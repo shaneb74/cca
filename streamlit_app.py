@@ -4,11 +4,9 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import streamlit as st
 
-# ============== Files ==============
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
-OVERLAY_PATH = "senior_care_modular_overlay.json"  # optional
+OVERLAY_PATH = "senior_care_modular_overlay.json"
 
-# ============== Helpers ==============
 def money(x):
     try:
         return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -29,13 +27,10 @@ def load_spec(base_path: str, overlay_path: str | None = None):
         return {}
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path) or {}
-        # merge lookups
         if overlay.get("lookups"):
             spec.setdefault("lookups", {}).update(overlay["lookups"])
-        # replace modules if provided
         if overlay.get("modules"):
             spec["modules"] = overlay["modules"]
-        # ui_group overrides
         ov = overlay.get("ui_group_overrides", {})
         by_id = {g["id"]: g for g in spec.get("ui_groups", [])}
         for gid, patch in ov.items():
@@ -59,7 +54,6 @@ def compute(spec, inputs):
     lookups = spec.get("lookups", {})
 
     def in_home_hourly(hours_val: int):
-        # linear interpolation across the provided matrix keys
         matrix = {int(k): v for k, v in lookups.get("in_home_care_matrix", {}).items()}
         if not matrix:
             return 0
@@ -110,17 +104,14 @@ def compute(spec, inputs):
             base_b = lookups.get("room_type", {}).get(room_b, 0)
             if b_type == "Memory Care":
                 base_b *= settings.get("memory_care_multiplier", 1.25)
-            # discount: second person cost instead of full room
             return money(base_b - settings.get("second_person_cost", 1200))
         return 0.0
 
     care_cost = per_person_cost("a") + per_person_cost("b") - shared_unit_discount()
 
-    # home carry
     home_fields = ["mortgage","taxes","insurance","hoa","utilities"]
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields) if inputs.get("maintain_home_household") else 0.0
 
-    # optional costs (incl. heloc payment)
     optional_fields = [
         "medicare_premiums","dental_vision_hearing","home_modifications_monthly","other_debts_monthly",
         "pet_care","entertainment_hobbies","optional_rx","optional_personal_care","optional_phone_internet",
@@ -129,7 +120,6 @@ def compute(spec, inputs):
     ]
     optional_sum = sum(inputs.get(k, 0.0) for k in optional_fields)
 
-    # benefits & income
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_add  = settings.get("ltc_monthly_add", 1800)
     ltc_total = (ltc_add if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
@@ -147,7 +137,7 @@ def compute(spec, inputs):
         hecm, heloc_draw, re_inv
     ]) + va_total + ltc_total
 
-    tax_rate = inputs.get("estimated_tax_rate", 0.0)  # gross by default
+    tax_rate = inputs.get("estimated_tax_rate", 0.0)
     household_income_after_tax = household_income * (1 - tax_rate)
 
     monthly_cost = money(care_cost + home_sum + optional_sum)
@@ -167,18 +157,16 @@ def compute(spec, inputs):
         "years_funded_cap30": round(years, 2) if years is not None else None
     }
 
-# ============== UI CONFIG ==============
 st.set_page_config(page_title="Senior Care Cost Planner", page_icon="🧭", layout="centered")
 spec = load_spec(JSON_PATH, OVERLAY_PATH)
 if not spec:
-    st.error("Could not load calculator spec. Ensure JSON files are present and valid.")
+    st.error("Could not load calculator spec.")
     st.stop()
 
 groups = {g["id"]: g for g in spec.get("ui_groups", [])}
 modules = spec.get("modules", [])
 lookups = spec.get("lookups", {})
 
-# tooltips
 HELP_HOURS = "Paid caregiver hours per day (0–24)."
 HELP_LEVEL = "ADL context: Low = independent/minimal help; Medium = some ADLs; High = extensive ADL/cognitive support."
 HELP_MOB   = "Mobility needs can change staffing and costs."
@@ -188,7 +176,6 @@ HELP_VA_EL = "Check if they qualify for VA Aid & Attendance. If unsure, you can 
 HELP_VA_T  = "Choose the official VA Aid & Attendance designation. Amount fills automatically; only applies if eligible."
 HELP_HMOD  = "Monthly‑ize one‑time projects like ramps, grab bars, and stair lifts."
 
-# session_state
 if "step" not in st.session_state: st.session_state.step = 1
 if "inputs" not in st.session_state: st.session_state.inputs = {}
 if "name_hint" not in st.session_state: st.session_state.name_hint = {"A": "Person A", "B": "Person B"}
@@ -208,10 +195,9 @@ st.title("🧭 Senior Care Cost Planner")
 st.caption("Estimate realistic care costs, include household realities, and understand funding options.")
 progress(st.session_state.step)
 
-# ============== Step 1 ==============
+# Step 1
 if st.session_state.step == 1:
     st.header("Step 1 · Who is this plan for?")
-
     who = st.radio("Choose one:", [
         "Myself", "My spouse/partner", "My parent / parent-in-law", "Other relative / POA / friend", "A couple (two people)"
     ])
@@ -222,7 +208,11 @@ if st.session_state.step == 1:
         b_name = c2.text_input("Name of Person B", value="Person B")
         st.session_state.name_hint = {"A": a_name or "Person A", "B": b_name or "Person B"}
         st.session_state.include_b = True
-        st.session_state.inputs["person_b_in_care"] = True  # both in scope
+        st.session_state.inputs["person_b_in_care"] = True
+    elif who == "Myself":
+        me = c1.text_input("Your name", value="") or "Me"
+        st.session_state.name_hint = {"A": me, "B": "Partner"}
+        st.session_state.include_b = st.checkbox("Include spouse/partner in this plan for household costs?", value=False)
     else:
         a_name = c1.text_input("Care recipient's name", value="Person A")
         planner = c2.text_input("Your name (planner)", value="")
@@ -231,13 +221,11 @@ if st.session_state.step == 1:
         if st.session_state.include_b and planner:
             st.session_state.name_hint["B"] = planner
 
-    # State
     states = list(lookups.get("state_multipliers", {"National":1.0}).keys())
     s_idx = states.index("National") if "National" in states else 0
     state = st.selectbox("Location for cost estimates", states, index=s_idx)
     st.session_state.inputs["state"] = state
 
-    # Home strategy
     st.markdown("**Home & funding approach**")
     home_plan = st.radio("How will the home factor into paying for care?",
                          ["Keep living in the home (don’t tap equity)",
@@ -255,7 +243,7 @@ if st.session_state.step == 1:
         st.rerun()
     st.divider()
 
-# ============== Step 2 ==============
+# Step 2
 elif st.session_state.step == 2:
     st.header(f"Step 2 · Care plan for {st.session_state.name_hint['A']}")
     inputs = st.session_state.inputs
@@ -290,10 +278,8 @@ elif st.session_state.step == 2:
         cc = st.selectbox("Chronic conditions", list(lookups["chronic_adders"].keys()), index=1, help=HELP_CHRON, key=f"cc_{tag_key}")
         inputs[f"chronic_person_{tag_key[-1]}"] = cc
 
-    # Person A always has a care plan
     render_person("person_a", st.session_state.name_hint["A"])
 
-    # Optional Person B
     if st.session_state.include_b:
         st.subheader("Spouse / Partner (optional)")
         st.caption(f"Planning for **{st.session_state.name_hint['A']}**. Even if **{st.session_state.name_hint['B']}** won’t receive paid care, their costs and income affect affordability.")
@@ -306,7 +292,6 @@ elif st.session_state.step == 2:
         inputs["person_b_in_care"] = care_b != "Stay at Home (no paid care)"
 
         if inputs["person_b_in_care"]:
-            # choose separate details or copy A
             if st.checkbox("Use same care level, mobility, and chronic as Person A?", value=False):
                 inputs["care_level_person_b"] = inputs["care_level_person_a"]
                 inputs["mobility_person_b"] = inputs["mobility_person_a"]
@@ -336,7 +321,6 @@ elif st.session_state.step == 2:
                 if inputs["share_one_unit"]:
                     st.caption("When both are in a facility, couples can sometimes share one unit; this reduces costs for the second person.")
 
-    # nav
     c1, c2 = st.columns(2)
     if c1.button("← Back"):
         st.session_state.step = 1
@@ -346,17 +330,15 @@ elif st.session_state.step == 2:
         st.rerun()
     st.divider()
 
-# ============== Step 3 ==============
+# Step 3
 elif st.session_state.step == 3:
     st.header("Step 3 · Enter financial details")
     st.caption("Open a section to enter details. Leave anything at 0 (or un-checked) if it doesn’t apply.")
     inputs = st.session_state.inputs
 
-    # VA spouse flags
     if "va_spouse_is_b" not in st.session_state: st.session_state.va_spouse_is_b = False
     if "va_both_vets_combined" not in st.session_state: st.session_state.va_both_vets_combined = False
 
-    # Home plan banner
     if inputs.get("home_to_assets"):
         st.info("Home plan: **Sell the home** — Enter sale details below to compute net proceeds → Assets.")
     elif inputs.get("expect_hecm"):
@@ -366,7 +348,6 @@ elif st.session_state.step == 3:
     else:
         st.info("Home plan: **Keep living in the home** — We’ll include mortgage/taxes/insurance/utilities.")
 
-    # Build category map from JSON module ordering
     mod_to_ids = {}
     for g in spec.get("ui_groups", []):
         mod = g.get("module")
@@ -375,7 +356,6 @@ elif st.session_state.step == 3:
     cat_ids = {m["label"]: m["id"] for m in modules}
     CATEGORY_MAP = {label: mod_to_ids.get(cat_ids[label], []) for label in cat_labels}
 
-    # Sale -> Assets
     sale_net = None
     if inputs.get("home_to_assets"):
         st.markdown("### Home sale estimate")
@@ -401,10 +381,9 @@ elif st.session_state.step == 3:
                     break
             if not eligible:
                 monthly = 0.0
-            st.number_input(f"{person_label}: VA benefit (auto)", min_value=0.0, value=float(monthly), step=50.0, format="%.2f", key=f"va_amt_{gid}", disabled=True)
+            st.number_input(f"{person_label}: Calculated VA benefit (monthly)", min_value=0.0, value=float(monthly), step=50.0, format="%.2f", key=f"va_amt_{gid}", disabled=True)
             if eligible and monthly:
                 st.caption(f"**VA impact:** adds **${monthly:,.0f}/mo** to income; reduces monthly gap by the same amount once calculated.")
-            # write answers into the group's fields
             for f in g["fields"]:
                 if "VA benefit" in f.get("label",""):
                     ans[f.get("label")] = monthly
@@ -419,7 +398,6 @@ elif st.session_state.step == 3:
         label = g["label"]
         if rename:
             label = label.replace("Person A", rename.get("A","Person A")).replace("Person B", rename.get("B","Person B"))
-        # hide home carry if not keeping
         if gid == "group_home_carry" and not inputs.get("maintain_home_household"):
             return None
         with st.expander(f"{label} — {g.get('prompt','')}", expanded=False):
@@ -435,9 +413,13 @@ elif st.session_state.step == 3:
                         inputs["heloc_payment_monthly"] = st.number_input("HELOC monthly payment (adds to expenses)", min_value=0.0, value=float(inputs.get("heloc_payment_monthly", 0.0)), step=50.0, format="%.2f")
             for f in g["fields"]:
                 fld_label = f.get("label", f["field"])
+                # replace A/B suffixes with names
+                if fld_label.endswith("— A"):
+                    fld_label = fld_label.replace("— A", f" — {rename.get('A', st.session_state.name_hint['A'])}")
+                if fld_label.endswith("— B"):
+                    fld_label = fld_label.replace("— B", f" — {rename.get('B', st.session_state.name_hint['B'])}")
                 if gid == "group_assets" and fld_label == "Other liquid assets":
                     fld_label = "Other savings & investments"
-                # hide direct Home equity input if keeping or selling autocalc
                 if gid == "group_assets" and "Home equity" in fld_label and (inputs.get("maintain_home_household") or inputs.get("home_to_assets")):
                     continue
                 kind = f.get("kind", "currency")
@@ -454,16 +436,29 @@ elif st.session_state.step == 3:
                 if gid == "group_optional_costs":
                     if "Home modifications" in fld_label:
                         help_txt = HELP_HMOD
-                        with st.expander("Calculate a monthly amount from a one‑time project (optional)", expanded=True):
-                            one = st.number_input("One‑time modification cost ($)", min_value=0.0, value=float(inputs.get("hm_one_time", 0.0)), step=100.0, format="%.2f")
-                            months = st.number_input("Spread over (months)", min_value=1, value=int(inputs.get("hm_months", 24)), step=1)
-                            monthly_est = one / max(1, months)
-                            st.caption(f"Estimated monthly: **${monthly_est:,.2f}**")
-                            inputs["home_modifications_monthly"] = monthly_est
+                        with st.expander("Age‑in‑place home modifications (one‑time)", expanded=False):
+                            items = [
+                                ("Grab bars / handrails", 300.0),
+                                ("Ramp / threshold fixes", 1500.0),
+                                ("Stair lift", 5500.0),
+                                ("Walk‑in shower conversion", 9000.0),
+                                ("Widened doorways / hall clearance", 2500.0)
+                            ]
+                            sel = st.multiselect("Select any that apply", [i[0] for i in items], default=[])
+                            one_sum = 0.0
+                            for label_item, default_cost in items:
+                                if label_item in sel:
+                                    one_sum += st.number_input(f"Cost — {label_item}", min_value=0.0, value=float(default_cost), step=100.0, format="%.2f")
+                            add_other = st.checkbox("Add another custom project?", value=False)
+                            if add_other:
+                                one_sum += st.number_input("Custom project cost", min_value=0.0, value=0.0, step=100.0, format="%.2f")
+                            spread = st.number_input("Spread total over (months)", min_value=1, value=int(inputs.get("hm_months", 24)), step=1)
+                            monthly_est2 = one_sum / max(1, spread)
+                            st.caption(f"Estimated monthly from selected projects: **${monthly_est2:,.2f}**")
+                            inputs["home_modifications_monthly"] = inputs.get("home_modifications_monthly", 0.0) + monthly_est2
                     if "Medicare premiums" in fld_label: help_txt = "Monthly total for Parts B/D/Advantage premiums."
                     if "Dental" in fld_label or "vision" in fld_label: help_txt = "Out‑of‑pocket monthly average for dental/vision/hearing."
                     if "Other debts" in fld_label: help_txt = "Credit cards, personal loans, etc."
-                # render
                 if kind == "boolean":
                     v = st.checkbox(fld_label, value=(str(default).lower() in {"yes","true","1"}))
                     ans[fld_label] = v
@@ -485,39 +480,31 @@ elif st.session_state.step == 3:
                     continue
                 if gid.startswith("group_benefits"):
                     person_label = name_map["A"] if gid.endswith("_person_a") else name_map["B"]
-                    # spouse suppression
-                    if gid.endswith("_person_b") and (st.session_state.va_spouse_is_b or st.session_state.va_both_vets_combined):
-                        with st.expander(f"{groups[gid]['label'].replace('Person B', person_label)} — {groups[gid].get('prompt','')}", expanded=False):
-                            st.info("VA is already accounted for in Person A’s selection. No separate VA entry needed for the spouse.")
-                            ans = {f.get("label"): 0.0 for f in groups[gid]["fields"] if "VA benefit" in f.get("label","")}
-                            for f in groups[gid]["fields"]:
-                                if "LTC insurance" in f.get("label",""):
-                                    has = st.checkbox(f"{person_label}: Has long‑term care insurance?", value=False, key=f"ltc_{gid}")
-                                    ans[f.get("label")] = has
-                        grouped[gid] = ans
-                    else:
-                        ans, choice, elig = render_benefits(person_label, gid)
-                        grouped[gid] = ans
-                        # spouse logic hooks only from A's selection
-                        if gid.endswith("_person_a") and st.session_state.include_b:
-                            if choice == "Veteran with spouse":
+                    ans, choice, elig = render_benefits(person_label, gid)
+                    grouped[gid] = ans
+                    if gid.endswith("_person_a"):
+                        if choice == "Veteran with spouse":
+                            if not st.session_state.include_b:
+                                add_b = st.checkbox("Add spouse/partner to this plan to apply the VA spouse designation?", value=True, key="va_add_spouse")
+                                if add_b:
+                                    st.session_state.include_b = True
+                            if st.session_state.include_b:
                                 is_spouse_b = st.checkbox(f"Is {name_map['B']} the spouse included in this plan?", value=True, key="va_is_spouse_b")
                                 st.session_state.va_spouse_is_b = bool(elig and is_spouse_b)
                                 st.session_state.va_both_vets_combined = False
-                            elif choice == "Two married veterans (both A&A)":
-                                st.info("This tier reflects the combined A&A amount for two married veterans. We’ll apply the full benefit once, and you won’t need to enter a separate VA amount for the spouse.")
-                                st.session_state.va_spouse_is_b = False
-                                st.session_state.va_both_vets_combined = bool(elig)
-                            else:
-                                st.session_state.va_spouse_is_b = False
-                                if choice != "Two married veterans (both A&A)":
-                                    st.session_state.va_both_vets_combined = False
+                        elif choice == "Two married veterans (both A&A)":
+                            st.info("This tier reflects the combined A&A amount for two married veterans. We’ll apply the full benefit once; no separate VA entry for the spouse.")
+                            st.session_state.va_spouse_is_b = False
+                            st.session_state.va_both_vets_combined = bool(elig)
+                        else:
+                            st.session_state.va_spouse_is_b = False
+                            if choice != "Two married veterans (both A&A)":
+                                st.session_state.va_both_vets_combined = False
                 else:
                     ans = render_group(gid, rename=name_map)
                     if ans is not None:
                         grouped[gid] = ans
 
-        # Advanced
         st.markdown("### Advanced (optional)")
         col1, col2, col3 = st.columns(3)
         inputs["inflation_rate"] = col1.slider("Annual inflation (%)", 0.0, 8.0, 3.0) / 100
@@ -527,7 +514,6 @@ elif st.session_state.step == 3:
         submitted = st.form_submit_button("Calculate")
 
     if submitted:
-        # flatten grouped answers into inputs by matching labels/fields
         flat = dict(inputs)
         for gid, ans in grouped.items():
             g = groups.get(gid, {})
@@ -540,10 +526,8 @@ elif st.session_state.step == 3:
                         v = f.get("true_value","Yes") if v else f.get("false_value","No")
                     if isinstance(v, (int,float,str)):
                         flat[field] = v
-        # sale proceeds into home_equity
         if sale_net is not None:
             flat["home_equity"] = float(sale_net)
-        # compute
         st.session_state.res = compute(spec, flat)
         st.session_state.step = 4
         st.rerun()
@@ -554,7 +538,7 @@ elif st.session_state.step == 3:
         st.rerun()
     st.divider()
 
-# ============== Step 4 ==============
+# Step 4
 elif st.session_state.step == 4:
     st.header("Step 4 · Results")
     r = st.session_state.get("res", {})
