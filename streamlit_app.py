@@ -1,5 +1,5 @@
 # streamlit_app.py
-# Senior Care Cost Planner – demo-ready with fixed Step 1 audiencing
+# Senior Care Cost Planner – demo-ready with reactive Step 1 (no form)
 # Requires: streamlit (see requirements_streamlit.txt)
 # Expects these files in the same folder:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix4"
+APP_VERSION = "v2025-09-03-demofix-reactive-step1"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -308,113 +308,114 @@ def main():
     step = st.session_state.step
     progress_header(step)
 
-    # ---------------- Step 1
+    # ---------------- Step 1 (reactive, no form so the radio updates instantly)
     if step == 1:
-        with st.form("form_step1", clear_on_submit=False):
-            c1, c2 = st.columns([2,1])
-            with c1:
-                st.header("Step 1 · Who are we planning for?")
-                who = st.radio("Select the situation", [
-                    "I'm planning for myself",
-                    "I'm planning for my spouse/partner",
-                    "I'm planning for my parent/parent-in-law",
-                    "I'm planning for a couple (both parents/partners)",
-                    "I'm planning for a relative or POA",
-                    "I'm planning for a friend or someone else"
-                ], index=0)
+        c1, c2 = st.columns([2,1])
+        with c1:
+            st.header("Step 1 · Who are we planning for?")
+            options = [
+                "I'm planning for myself",
+                "I'm planning for my spouse/partner",
+                "I'm planning for my parent/parent-in-law",
+                "I'm planning for a couple (both parents/partners)",
+                "I'm planning for a relative or POA",
+                "I'm planning for a friend or someone else"
+            ]
+            if "who_idx" not in st.session_state:
+                st.session_state.who_idx = 0
+            who = st.radio("Select the situation", options, index=st.session_state.who_idx, key="who_choice")
+            st.session_state.who_idx = options.index(who)
 
-                # Exact audiencing behavior
-                if who == "I'm planning for myself":
-                    # One field: Your name
-                    cols = st.columns(2)
-                    with cols[0]:
-                        your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_self_you")
-                    st.session_state.include_b = False
-                    st.session_state.name_hint = {"A": your_name or "You", "B": "Partner"}
+            # Exact audiencing behavior
+            if who == "I'm planning for myself":
+                cols = st.columns(2)
+                with cols[0]:
+                    your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_self_you")
+                st.session_state.include_b = False
+                st.session_state.name_hint = {"A": your_name or "You", "B": "Partner"}
 
-                elif who == "I'm planning for my spouse/partner":
-                    # Left: care recipient (spouse). Right: your name. Then a checkbox to include you.
-                    cols = st.columns(2)
-                    with cols[0]:
-                        recip = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_spouse_recipient")
-                    with cols[1]:
-                        your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_spouse_you")
-                    include_you = st.checkbox("Include you for household costs", value=True, key="chk_include_you")
-                    st.session_state.include_b = include_you
-                    st.session_state.name_hint = {"A": recip or "Care Recipient", "B": your_name or "You"}
+            elif who == "I'm planning for my spouse/partner":
+                cols = st.columns(2)
+                with cols[0]:
+                    recip = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_spouse_recipient")
+                with cols[1]:
+                    your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_spouse_you")
+                include_you = st.checkbox("Include you for household costs", value=True, key="chk_include_you")
+                st.session_state.include_b = include_you
+                st.session_state.name_hint = {"A": recip or "Care Recipient", "B": your_name or "You"}
 
-                elif who == "I'm planning for my parent/parent-in-law":
-                    cols = st.columns(2)
-                    with cols[0]:
-                        a_name = st.text_input("Care recipient's name", placeholder="e.g., Teresa", key="name_parent_a")
-                    with cols[1]:
-                        b_name = st.text_input("Second parent's name (optional)", placeholder="e.g., Shane", key="name_parent_b")
-                    include_other = st.checkbox("Include the second parent for household costs", value=True, key="chk_include_other_parent")
-                    st.session_state.include_b = include_other and bool(b_name.strip())
-                    st.session_state.name_hint = {"A": a_name or "Parent 1", "B": (b_name or "Parent 2") if st.session_state.include_b else "Parent 2"}
+            elif who == "I'm planning for my parent/parent-in-law":
+                cols = st.columns(2)
+                with cols[0]:
+                    a_name = st.text_input("Care recipient's name", placeholder="e.g., Teresa", key="name_parent_a")
+                with cols[1]:
+                    b_name = st.text_input("Second parent's name (optional)", placeholder="e.g., Shane", key="name_parent_b")
+                include_other = st.checkbox("Include the second parent for household costs", value=True, key="chk_include_other_parent")
+                st.session_state.include_b = include_other and bool((b_name or "").strip())
+                st.session_state.name_hint = {"A": a_name or "Parent 1", "B": (b_name or "Parent 2") if st.session_state.include_b else "Parent 2"}
 
-                elif who == "I'm planning for a couple (both parents/partners)":
-                    cols = st.columns(2)
-                    with cols[0]:
-                        a_name = st.text_input("First person's name", placeholder="e.g., Teresa", key="name_couple_a")
-                    with cols[1]:
-                        b_name = st.text_input("Second person's name", placeholder="e.g., Shane", key="name_couple_b")
-                    st.session_state.include_b = True
-                    st.session_state.name_hint = {"A": a_name or "Person 1", "B": b_name or "Person 2"}
+            elif who == "I'm planning for a couple (both parents/partners)":
+                cols = st.columns(2)
+                with cols[0]:
+                    a_name = st.text_input("First person's name", placeholder="e.g., Teresa", key="name_couple_a")
+                with cols[1]:
+                    b_name = st.text_input("Second person's name", placeholder="e.g., Shane", key="name_couple_b")
+                st.session_state.include_b = True
+                st.session_state.name_hint = {"A": a_name or "Person 1", "B": b_name or "Person 2"}
 
-                else:
-                    # Relative or friend
-                    cols = st.columns(2)
-                    with cols[0]:
-                        a_name = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_other_a")
-                    with cols[1]:
-                        b_name = st.text_input("Spouse/partner name (optional)", placeholder="e.g., Sam", key="name_other_b")
-                    include_spouse = st.checkbox("Include the spouse/partner for household costs", value=False, key="chk_include_spouse_other")
-                    st.session_state.include_b = include_spouse and bool(b_name.strip())
-                    st.session_state.name_hint = {"A": a_name or "Person A", "B": (b_name or "Partner") if st.session_state.include_b else "Partner"}
+            else:
+                cols = st.columns(2)
+                with cols[0]:
+                    a_name = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_other_a")
+                with cols[1]:
+                    b_name = st.text_input("Spouse/partner name (optional)", placeholder="e.g., Sam", key="name_other_b")
+                include_spouse = st.checkbox("Include the spouse/partner for household costs", value=False, key="chk_include_spouse_other")
+                st.session_state.include_b = include_spouse and bool((b_name or "").strip())
+                st.session_state.name_hint = {"A": a_name or "Person A", "B": (b_name or "Partner") if st.session_state.include_b else "Partner"}
 
-                # Location select
-                states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
-                states = (["National"] if "National" in states else []) + sorted([s for s in states if s != "National"])
-                s_idx = states.index("National") if "National" in states else 0
-                state = st.selectbox("Location for cost estimates", states, index=s_idx, key="sel_state")
-                st.session_state.inputs["state"] = state
+            # Location select
+            states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
+            states = (["National"] if "National" in states else []) + sorted([s for s in states if s != "National"])
+            s_idx = states.index("National") if "National" in states else 0
+            state = st.selectbox("Location for cost estimates", states, index=s_idx, key="sel_state")
+            st.session_state.inputs["state"] = state
 
-                # Home plan
-                st.markdown("**Home & funding approach**")
-                home_plan = st.radio("How will the home factor into paying for care?", [
-                    "Keep living in the home (don't tap equity)",
-                    "Sell the home (use net proceeds)",
-                    "Use reverse mortgage (HECM)",
-                    "Consider a HELOC (home equity line)"
-                ], index=0, key="home_plan")
-                inp = st.session_state.inputs
-                inp["maintain_home_household"] = (home_plan == "Keep living in the home (don't tap equity)")
-                inp["home_to_assets"] = (home_plan == "Sell the home (use net proceeds)")
-                inp["expect_hecm"] = (home_plan == "Use reverse mortgage (HECM)")
-                inp["expect_heloc"] = (home_plan == "Consider a HELOC (home equity line)")
+            # Home plan
+            st.markdown("**Home & funding approach**")
+            home_plan = st.radio("How will the home factor into paying for care?", [
+                "Keep living in the home (don't tap equity)",
+                "Sell the home (use net proceeds)",
+                "Use reverse mortgage (HECM)",
+                "Consider a HELOC (home equity line)"
+            ], index=0, key="home_plan")
+            inp = st.session_state.inputs
+            inp["maintain_home_household"] = (home_plan == "Keep living in the home (don't tap equity)")
+            inp["home_to_assets"] = (home_plan == "Sell the home (use net proceeds)")
+            inp["expect_hecm"] = (home_plan == "Use reverse mortgage (HECM)")
+            inp["expect_heloc"] = (home_plan == "Consider a HELOC (home equity line)")
 
-                if inp["home_to_assets"]:
-                    st.markdown("**Home sale estimate**")
-                    cols2 = st.columns(3)
-                    with cols2[0]:
-                        sell_price = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price", 0.0)), step=1000.0, format="%.2f", key="sell_price")
-                    with cols2[1]:
-                        mortgage_payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f", key="mortgage_payoff")
-                    with cols2[2]:
-                        fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f", key="selling_fees")
-                    net = max(0.0, sell_price - mortgage_payoff - fees)
-                    st.info(f"Estimated net proceeds: {mfmt(net)} (auto-added to Assets)")
-                    inp.update({"sell_price": sell_price, "mortgage_payoff": mortgage_payoff, "selling_fees": fees, "home_equity": net})
+            if inp["home_to_assets"]:
+                st.markdown("**Home sale estimate**")
+                cols2 = st.columns(3)
+                with cols2[0]:
+                    sell_price = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price", 0.0)), step=1000.0, format="%.2f", key="sell_price")
+                with cols2[1]:
+                    mortgage_payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f", key="mortgage_payoff")
+                with cols2[2]:
+                    fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f", key="selling_fees")
+                net = max(0.0, sell_price - mortgage_payoff - fees)
+                st.info(f"Estimated net proceeds: {mfmt(net)} (auto-added to Assets)")
+                inp.update({"sell_price": sell_price, "mortgage_payoff": mortgage_payoff, "selling_fees": fees, "home_equity": net})
 
-            with c2:
-                st.info("Tip: Save or load a plan from the sidebar at any time.")
+        with c2:
+            st.info("Tip: Save or load a plan from the sidebar at any time.")
 
-            if st.form_submit_button("Continue →", type="primary"):
-                st.session_state.step = 2
-                st.rerun()
+        # Plain button to advance; widgets above are reactive without submit
+        if st.button("Continue →", type="primary", key="btn_step1_continue"):
+            st.session_state.step = 2
+            st.rerun()
 
-    # ---------------- Step 2
+    # ---------------- Step 2 (use form to stabilize multi-widget submit)
     elif step == 2:
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
@@ -497,7 +498,7 @@ def main():
                 st.session_state.step = 3
                 st.rerun()
 
-    # ---------------- Step 3
+    # ---------------- Step 3 (unchanged)
     elif step == 3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. If something doesn’t apply, leave it at 0.")
