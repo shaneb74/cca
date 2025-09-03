@@ -330,7 +330,7 @@
         },
         {
           "field": "other_assets",
-          "label": "Other liquid assets",
+          "label": "Other savings & investments",
           "kind": "currency",
           "default": 0
         }
