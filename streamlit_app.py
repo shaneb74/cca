@@ -10,6 +10,39 @@ SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
 # ---------- utils
+
+# ---------- currency parsing helpers
+import re
+def parse_currency_str(s, default=0.0):
+    if s is None:
+        return float(default)
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s).strip()
+    if s == "":
+        return float(default)
+    s = s.replace(",", "")
+    try:
+        return float(s)
+    except Exception:
+        try:
+            return float(default)
+        except Exception:
+            return 0.0
+
+def currency_input(label, store_name, default=0.0, drawer_name=None, help_text=None):
+    raw_key = f"{store_name}_raw"
+    existing = st.session_state.inputs.get(store_name, default)
+    # seed raw display once
+    if raw_key not in st.session_state:
+        st.session_state[raw_key] = (f"{existing:,.2f}" if existing else "")
+    raw = st.text_input(label, value=st.session_state.get(raw_key, ""), key=raw_key, help=help_text,
+                        on_change=mark_touched if drawer_name else None,
+                        args=(drawer_name,) if drawer_name else None)
+    val = parse_currency_str(raw, default=default)
+    st.session_state.inputs[store_name] = val
+    return val
+
 def money(x):
     try:
         return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -232,6 +265,11 @@ def home_mods_ui(inp):
     name = "home_mods"
     with expander(name, "Home modifications (one-time costs)", inp.get("home_mod_total", 0.0)):
         st.caption("Pick what you expect to install, then choose a spec level or set your own number. Ranges reflect typical installs; your costs may vary.")
+
+# Contextual note when no in‑home care is selected
+if not (st.session_state.inputs.get("care_type_a","").startswith("In-Home") or st.session_state.inputs.get("care_type_b","").startswith("In-Home")):
+    st.warning("Home modification costs may not apply to your current plan because neither person has In‑Home Care selected. You can still enter estimates if you expect to modify the home for accessibility or safety.")
+
         SPEC = ["Typical", "Basic", "Custom"]
 
         def item(key, label, hint, low, high, avg):
@@ -363,11 +401,11 @@ def main():
             st.subheader("Home sale estimate")
             c1, c2, c3 = st.columns(3)
             with c1:
-                sell = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price", 0.0)), step=1000.0, format="%.2f", key="sell_price_key")
+                sell = currency_input("Estimated sale price", "sell_price", default=inp.get("sell_price", 0.0))
             with c2:
-                payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f", key="mortgage_payoff_key")
+                payoff = currency_input("Est. mortgage payoff", "mortgage_payoff", default=inp.get("mortgage_payoff", 0.0))
             with c3:
-                fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f", key="selling_fees_key")
+                fees = currency_input("Selling costs (fees, repairs, etc.)", "selling_fees", default=inp.get("selling_fees", 0.0))
             net = max(0.0, sell - payoff - fees)
             inp.update({"sell_price": sell, "mortgage_payoff": payoff, "selling_fees": fees, "home_equity": net})
             st.info(f"Estimated net proceeds added to Assets: {mfmt(net)}")
@@ -440,24 +478,24 @@ def main():
         # Income A
         income_a_preview = float(inp.get("ss_a", 0.0)) + float(inp.get("pension_a", 0.0))
         with expander("income_a", f"Income — {names.get('A','Person A')}", income_a_preview):
-            inp["ss_a"] = st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_a", 0.0)), step=50.0, key="ss_a_key", on_change=mark_touched, args=("income_a",))
-            inp["pension_a"] = st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_a", 0.0)), step=50.0, key="pension_a_key", on_change=mark_touched, args=("income_a",))
+            inp["ss_a"] = currency_input("Social Security (monthly)", "ss_a", default=inp.get("ss_a", 0.0), drawer_name="income_a")
+            inp["pension_a"] = currency_input("Pension (monthly)", "pension_a", default=inp.get("pension_a", 0.0), drawer_name="income_a")
 
         # Income B
         if st.session_state.get("include_b", False):
             income_b_preview = float(inp.get("ss_b", 0.0)) + float(inp.get("pension_b", 0.0))
             with expander("income_b", f"Income — {names.get('B','Person B')}", income_b_preview):
-                inp["ss_b"] = st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_b", 0.0)), step=50.0, key="ss_b_key", on_change=mark_touched, args=("income_b",))
-                inp["pension_b"] = st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_b", 0.0)), step=50.0, key="pension_b_key", on_change=mark_touched, args=("income_b",))
+                inp["ss_b"] = currency_input("Social Security (monthly)", "ss_b", default=inp.get("ss_b", 0.0), drawer_name="income_b")
+                inp["pension_b"] = currency_input("Pension (monthly)", "pension_b", default=inp.get("pension_b", 0.0), drawer_name="income_b")
 
         # Household income
         hh_preview = float(inp.get("rental_income", 0.0)) + float(inp.get("wages_part_time", 0.0)) + float(inp.get("alimony_support", 0.0)) + float(inp.get("dividends_interest", 0.0)) + float(inp.get("other_income_monthly", 0.0))
         with expander("income_hh", "Income — Additional household", hh_preview):
-            inp["rental_income"] = st.number_input("Rental income (monthly)", min_value=0.0, value=float(inp.get("rental_income", 0.0)), step=50.0, key="rental_income_key", on_change=mark_touched, args=("income_hh",))
-            inp["wages_part_time"] = st.number_input("Wages (part-time)", min_value=0.0, value=float(inp.get("wages_part_time", 0.0)), step=50.0, key="wages_part_time_key", on_change=mark_touched, args=("income_hh",))
-            inp["alimony_support"] = st.number_input("Alimony / support received", min_value=0.0, value=float(inp.get("alimony_support", 0.0)), step=50.0, key="alimony_support_key", on_change=mark_touched, args=("income_hh",))
-            inp["dividends_interest"] = st.number_input("Dividends & interest", min_value=0.0, value=float(inp.get("dividends_interest", 0.0)), step=50.0, key="dividends_interest_key", on_change=mark_touched, args=("income_hh",))
-            inp["other_income_monthly"] = st.number_input("Other income (monthly)", min_value=0.0, value=float(inp.get("other_income_monthly", 0.0)), step=50.0, key="other_income_monthly_key", on_change=mark_touched, args=("income_hh",))
+            inp["rental_income"] = currency_input("Rental income (monthly)", "rental_income", default=inp.get("rental_income", 0.0), drawer_name="income_hh")
+            inp["wages_part_time"] = currency_input("Wages (part-time)", "wages_part_time", default=inp.get("wages_part_time", 0.0), drawer_name="income_hh")
+            inp["alimony_support"] = currency_input("Alimony / support received", "alimony_support", default=inp.get("alimony_support", 0.0), drawer_name="income_hh")
+            inp["dividends_interest"] = currency_input("Dividends & interest", "dividends_interest", default=inp.get("dividends_interest", 0.0), drawer_name="income_hh")
+            inp["other_income_monthly"] = currency_input("Other income (monthly)", "other_income_monthly", default=inp.get("other_income_monthly", 0.0), drawer_name="income_hh")
 
         # Benefits (VA + LTC)
         va_preview = compute(inp, spec)
@@ -480,14 +518,14 @@ def main():
             st.text_input(f"VA benefit — {names.get('A','Person A')} (auto)", value=mfmt(va_preview["va_a"]), disabled=True, key="va_auto_a_disp")
             if st.checkbox(f"Override amount manually — {names.get('A','Person A')}", value=bool(inp.get("va_override_a_on", False)), key="va_override_a_on", on_change=mark_touched, args=("benefits",)):
                 inp["va_override_a_on"] = True
-                inp["va_override_a_val"] = st.number_input("VA amount override (monthly)", min_value=0.0, value=float(inp.get("va_override_a_val", 0.0)), step=25.0, key="va_override_a_val_key", on_change=mark_touched, args=("benefits",))
+                inp["va_override_a_val"] = currency_input("VA amount override (monthly)", "va_override_a_val", default=inp.get("va_override_a_val", 0.0), drawer_name="benefits")
             else:
                 inp["va_override_a_on"] = False
             if st.session_state.get("include_b", False):
                 st.text_input(f"VA benefit — {names.get('B','Person B')} (auto)", value=mfmt(va_preview["va_b"]), disabled=True, key="va_auto_b_disp")
                 if st.checkbox(f"Override amount manually — {names.get('B','Person B')}", value=bool(inp.get("va_override_b_on", False)), key="va_override_b_on", on_change=mark_touched, args=("benefits",)):
                     inp["va_override_b_on"] = True
-                    inp["va_override_b_val"] = st.number_input("VA amount override (monthly)", min_value=0.0, value=float(inp.get("va_override_b_val", 0.0)), step=25.0, key="va_override_b_val_key", on_change=mark_touched, args=("benefits",))
+                    inp["va_override_b_val"] = currency_input("VA amount override (monthly)", "va_override_b_val", default=inp.get("va_override_b_val", 0.0), drawer_name="benefits")
                 else:
                     inp["va_override_b_on"] = False
 
@@ -496,44 +534,44 @@ def main():
             ltc_a_on = st.checkbox(f"{names.get('A','Person A')} has LTC policy", value=bool(inp.get("ltc_a_on", False)), key="ltc_a_on", on_change=mark_touched, args=("benefits",))
             inp["ltc_a_on"] = ltc_a_on
             if ltc_a_on:
-                inp["ltc_a_monthly"] = st.number_input("Monthly benefit amount (A)", min_value=0.0, value=float(inp.get("ltc_a_monthly", 0.0)), step=50.0, key="ltc_a_monthly_key", on_change=mark_touched, args=("benefits",))
+                inp["ltc_a_monthly"] = currency_input("Monthly benefit amount (A)", "ltc_a_monthly", default=inp.get("ltc_a_monthly", 0.0), drawer_name="benefits")
             if st.session_state.get("include_b", False):
                 ltc_b_on = st.checkbox(f"{names.get('B','Person B')} has LTC policy", value=bool(inp.get("ltc_b_on", False)), key="ltc_b_on", on_change=mark_touched, args=("benefits",))
                 inp["ltc_b_on"] = ltc_b_on
                 if ltc_b_on:
-                    inp["ltc_b_monthly"] = st.number_input("Monthly benefit amount (B)", min_value=0.0, value=float(inp.get("ltc_b_monthly", 0.0)), step=50.0, key="ltc_b_monthly_key", on_change=mark_touched, args=("benefits",))
+                    inp["ltc_b_monthly"] = currency_input("Monthly benefit amount (B)", "ltc_b_monthly", default=inp.get("ltc_b_monthly", 0.0), drawer_name="benefits")
 
         # Other monthly costs
         other_preview = float(inp.get("medicare", 0.0)) + float(inp.get("dvh", 0.0)) + float(inp.get("rx", 0.0)) + float(inp.get("personal", 0.0)) + float(inp.get("other_monthly", 0.0))
         with expander("other_costs", "Other monthly costs (optional)", other_preview):
-            inp["medicare"] = st.number_input("Medicare premiums", 0.0, value=float(inp.get("medicare", 0.0)), step=25.0, key="medicare_key", on_change=mark_touched, args=("other_costs",))
-            inp["dvh"] = st.number_input("Dental / vision / hearing", 0.0, value=float(inp.get("dvh", 0.0)), step=25.0, key="dvh_key", on_change=mark_touched, args=("other_costs",))
-            inp["rx"] = st.number_input("Prescriptions (optional)", 0.0, value=float(inp.get("rx", 0.0)), step=25.0, key="rx_key", on_change=mark_touched, args=("other_costs",))
-            inp["personal"] = st.number_input("Personal care (optional)", 0.0, value=float(inp.get("personal", 0.0)), step=25.0, key="personal_key", on_change=mark_touched, args=("other_costs",))
-            inp["other_monthly"] = st.number_input("Other monthly costs", 0.0, value=float(inp.get("other_monthly", 0.0)), step=25.0, key="other_monthly_key", on_change=mark_touched, args=("other_costs",))
+            inp["medicare"] = currency_input("Medicare premiums", "medicare", default=inp.get("medicare", 0.0), drawer_name="other_costs")
+            inp["dvh"] = currency_input("Dental / vision / hearing", "dvh", default=inp.get("dvh", 0.0), drawer_name="other_costs")
+            inp["rx"] = currency_input("Prescriptions (optional)", "rx", default=inp.get("rx", 0.0), drawer_name="other_costs")
+            inp["personal"] = currency_input("Personal care (optional)", "personal", default=inp.get("personal", 0.0), drawer_name="other_costs")
+            inp["other_monthly"] = currency_input("Other monthly costs", "other_monthly", default=inp.get("other_monthly", 0.0), drawer_name="other_costs")
 
         # Assets split
         assets_common_preview = float(inp.get("cash_savings", 0.0)) + float(inp.get("brokerage_taxable", 0.0)) + float(inp.get("ira_traditional", 0.0)) + float(inp.get("ira_roth", 0.0)) + float(inp.get("ira_total", 0.0)) + float(inp.get("employer_401k", 0.0)) + float(inp.get("home_equity", 0.0)) + float(inp.get("annuity_surrender", 0.0))
         with expander("assets_common", "Assets — Common balances", assets_common_preview):
-            inp["cash_savings"] = st.number_input("Cash and savings", 0.0, value=float(inp.get("cash_savings", 0.0)), step=100.0, key="cash_savings_key", on_change=mark_touched, args=("assets_common",))
-            inp["brokerage_taxable"] = st.number_input("Brokerage (taxable) total", 0.0, value=float(inp.get("brokerage_taxable", 0.0)), step=100.0, key="brokerage_taxable_key", on_change=mark_touched, args=("assets_common",))
-            inp["ira_traditional"] = st.number_input("Traditional IRA balance", 0.0, value=float(inp.get("ira_traditional", 0.0)), step=100.0, key="ira_traditional_key", on_change=mark_touched, args=("assets_common",))
-            inp["ira_roth"] = st.number_input("Roth IRA balance", 0.0, value=float(inp.get("ira_roth", 0.0)), step=100.0, key="ira_roth_key", on_change=mark_touched, args=("assets_common",))
-            inp["ira_total"] = st.number_input("IRA total (leave 0 if using granular lines)", 0.0, value=float(inp.get("ira_total", 0.0)), step=100.0, key="ira_total_key", on_change=mark_touched, args=("assets_common",))
-            inp["employer_401k"] = st.number_input("401(k) balance", 0.0, value=float(inp.get("employer_401k", 0.0)), step=100.0, key="employer_401k_key", on_change=mark_touched, args=("assets_common",))
-            inp["home_equity"] = st.number_input("Home equity", 0.0, value=float(inp.get("home_equity", 0.0)), step=100.0, key="home_equity_key", on_change=mark_touched, args=("assets_common",))
-            inp["annuity_surrender"] = st.number_input("Annuities (surrender value)", 0.0, value=float(inp.get("annuity_surrender", 0.0)), step=100.0, key="annuity_surrender_key", on_change=mark_touched, args=("assets_common",))
+            inp["cash_savings"] = currency_input("Cash and savings", "cash_savings", default=inp.get("cash_savings", 0.0), drawer_name="assets_common")
+            inp["brokerage_taxable"] = currency_input("Brokerage (taxable) total", "brokerage_taxable", default=inp.get("brokerage_taxable", 0.0), drawer_name="assets_common")
+            inp["ira_traditional"] = currency_input("Traditional IRA balance", "ira_traditional", default=inp.get("ira_traditional", 0.0), drawer_name="assets_common")
+            inp["ira_roth"] = currency_input("Roth IRA balance", "ira_roth", default=inp.get("ira_roth", 0.0), drawer_name="assets_common")
+            inp["ira_total"] = currency_input("IRA total (leave 0 if using granular lines)", "ira_total", default=inp.get("ira_total", 0.0), drawer_name="assets_common")
+            inp["employer_401k"] = currency_input("401(k) balance", "employer_401k", default=inp.get("employer_401k", 0.0), drawer_name="assets_common")
+            inp["home_equity"] = currency_input("Home equity", "home_equity", default=inp.get("home_equity", 0.0), drawer_name="assets_common")
+            inp["annuity_surrender"] = currency_input("Annuities (surrender value)", "annuity_surrender", default=inp.get("annuity_surrender", 0.0), drawer_name="assets_common")
 
         assets_more_preview = float(inp.get("cds_balance", 0.0)) + float(inp.get("employer_403b", 0.0)) + float(inp.get("employer_457b", 0.0)) + float(inp.get("ira_sep", 0.0)) + float(inp.get("ira_simple", 0.0)) + float(inp.get("life_cash_value", 0.0)) + float(inp.get("hsa_balance", 0.0)) + float(inp.get("other_assets", 0.0))
         with expander("assets_more", "More asset types (optional)", assets_more_preview):
-            inp["cds_balance"] = st.number_input("Certificates of deposit (CDs)", 0.0, value=float(inp.get("cds_balance", 0.0)), step=100.0, key="cds_balance_key", on_change=mark_touched, args=("assets_more",))
-            inp["employer_403b"] = st.number_input("403(b) balance", 0.0, value=float(inp.get("employer_403b", 0.0)), step=100.0, key="employer_403b_key", on_change=mark_touched, args=("assets_more",))
-            inp["employer_457b"] = st.number_input("457(b) balance", 0.0, value=float(inp.get("employer_457b", 0.0)), step=100.0, key="employer_457b_key", on_change=mark_touched, args=("assets_more",))
-            inp["ira_sep"] = st.number_input("SEP IRA balance", 0.0, value=float(inp.get("ira_sep", 0.0)), step=100.0, key="ira_sep_key", on_change=mark_touched, args=("assets_more",))
-            inp["ira_simple"] = st.number_input("SIMPLE IRA balance", 0.0, value=float(inp.get("ira_simple", 0.0)), step=100.0, key="ira_simple_key", on_change=mark_touched, args=("assets_more",))
-            inp["life_cash_value"] = st.number_input("Life insurance cash value", 0.0, value=float(inp.get("life_cash_value", 0.0)), step=100.0, key="life_cash_value_key", on_change=mark_touched, args=("assets_more",))
-            inp["hsa_balance"] = st.number_input("HSA balance", 0.0, value=float(inp.get("hsa_balance", 0.0)), step=100.0, key="hsa_balance_key", on_change=mark_touched, args=("assets_more",))
-            inp["other_assets"] = st.number_input("Other assets (catch‑all)", 0.0, value=float(inp.get("other_assets", 0.0)), step=100.0, key="other_assets_key", on_change=mark_touched, args=("assets_more",))
+            inp["cds_balance"] = currency_input("Certificates of deposit (CDs)", "cds_balance", default=inp.get("cds_balance", 0.0), drawer_name="assets_more")
+            inp["employer_403b"] = currency_input("403(b) balance", "employer_403b", default=inp.get("employer_403b", 0.0), drawer_name="assets_more")
+            inp["employer_457b"] = currency_input("457(b) balance", "employer_457b", default=inp.get("employer_457b", 0.0), drawer_name="assets_more")
+            inp["ira_sep"] = currency_input("SEP IRA balance", "ira_sep", default=inp.get("ira_sep", 0.0), drawer_name="assets_more")
+            inp["ira_simple"] = currency_input("SIMPLE IRA balance", "ira_simple", default=inp.get("ira_simple", 0.0), drawer_name="assets_more")
+            inp["life_cash_value"] = currency_input("Life insurance cash value", "life_cash_value", default=inp.get("life_cash_value", 0.0), drawer_name="assets_more")
+            inp["hsa_balance"] = currency_input("HSA balance", "hsa_balance", default=inp.get("hsa_balance", 0.0), drawer_name="assets_more")
+            inp["other_assets"] = currency_input("Other assets (catch‑all)", "other_assets", default=inp.get("other_assets", 0.0), drawer_name="assets_more")
 
         # Home modifications drawer
         hm_total = home_mods_ui(inp)
