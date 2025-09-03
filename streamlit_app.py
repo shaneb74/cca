@@ -1,18 +1,18 @@
 
-# streamlit_app.py — rebuilt (condensed) but complete
+# streamlit_app.py — fixed: unique keys, sidebar summary, home-sale net proceeds
 import json
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-rb3"
+APP_VERSION = "v2025-09-03-rb4"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
-def money(x): 
+def money(x):
     try: return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     except: return 0.0
-def mfmt(x): 
+def mfmt(x):
     try: return f"${float(x):,.2f}"
     except: return "$0.00"
 
@@ -36,7 +36,6 @@ def load_spec():
             if add["id"] not in {g["id"] for g in spec.get("ui_groups", [])}:
                 spec.setdefault("ui_groups", []).append(add)
     spec.setdefault("lookups", {})
-    # sensible defaults if missing
     spec["lookups"].setdefault("state_multipliers", {"National":1.0})
     spec["lookups"].setdefault("room_type", {"Studio":3500, "1 Bedroom":4200, "Shared":3000})
     spec["lookups"].setdefault("care_level_adders", {"Low":200, "Medium":600, "High":1200})
@@ -127,6 +126,19 @@ def compute(inputs, spec):
     gap = money(month_cost - income)
     return {"care":care,"home":home,"opt":opt,"month_cost":month_cost,"income":income,"gap":gap,"va_a":va_a,"va_b":va_b}
 
+def sidebar_summary():
+    st.sidebar.title("Live Summary")
+    st.sidebar.caption("Updates as you type.")
+    spec=load_spec(); res=compute(st.session_state.inputs, spec) if "inputs" in st.session_state else {}
+    if not res: 
+        st.sidebar.info("Fill in the steps to see totals."); 
+        return
+    st.sidebar.metric("Total monthly cost", mfmt(res["month_cost"]))
+    st.sidebar.metric("Household income", mfmt(res["income"]))
+    st.sidebar.metric("Monthly gap", mfmt(res["gap"]))
+    st.sidebar.metric("VA benefit — A", mfmt(res["va_a"]))
+    st.sidebar.metric("VA benefit — B", mfmt(res["va_b"]))
+
 def main():
     st.set_page_config(page_title="Senior Care Planner", layout="wide")
     st.title("Senior Care Cost Planner")
@@ -134,6 +146,7 @@ def main():
     if "step" not in st.session_state: st.session_state.step=1
     if "inputs" not in st.session_state: st.session_state.inputs={}
     inp=st.session_state.inputs
+    sidebar_summary()
 
     step=st.session_state.step
     st.progress(int((step-1)/3*100), text=f"Step {step} of 4")
@@ -155,12 +168,12 @@ def main():
         elif who=="I'm planning for my spouse/partner":
             a=st.text_input("Care recipient's name", placeholder="e.g., John", key="name_a")
             b=st.text_input("Your name", placeholder="e.g., Jane", key="name_b")
-            st.session_state.include_b = st.checkbox("Include you for household costs", value=True)
+            st.session_state.include_b = st.checkbox("Include you for household costs", value=True, key="inc_you_household")
             st.session_state.names={"A": a or "Care Recipient", "B": b or "You"}
         elif who=="I'm planning for my parent/parent-in-law":
             a=st.text_input("Care recipient's name", placeholder="e.g., John", key="name_pa")
             b=st.text_input("Second parent's name (optional)", placeholder="e.g., Jane", key="name_pb")
-            st.session_state.include_b = st.checkbox("Include the second parent for household costs", value=True) and bool(b.strip())
+            st.session_state.include_b = st.checkbox("Include the second parent for household costs", value=True, key="inc_parent_b") and bool((b or "").strip())
             st.session_state.names={"A": a or "Parent 1","B": (b or "Parent 2") if st.session_state.include_b else "Parent 2"}
         elif who=="I'm planning for a couple (both parents/partners)":
             a=st.text_input("First person's name", placeholder="e.g., John", key="name_ca")
@@ -169,23 +182,39 @@ def main():
         else:
             a=st.text_input("Care recipient's name", placeholder="e.g., John", key="name_oa")
             b=st.text_input("Spouse/partner name (optional)", placeholder="e.g., Jane", key="name_ob")
-            inc=st.checkbox("Include the spouse/partner for household costs", value=False)
-            st.session_state.include_b = inc and bool(b.strip())
+            inc=st.checkbox("Include the spouse/partner for household costs", value=False, key="inc_other_spouse")
+            st.session_state.include_b = inc and bool((b or "").strip())
             st.session_state.names={"A": a or "Person A","B": (b or "Partner") if st.session_state.include_b else "Partner"}
 
+        # Location
         states=list(spec["lookups"]["state_multipliers"].keys())
-        state=st.selectbox("Location for cost estimates", states, index=states.index("National") if "National" in states else 0)
+        state=st.selectbox("Location for cost estimates", states, index=states.index("National") if "National" in states else 0, key="state_sel")
         inp["state"]=state
 
+        # Home plan
         plan=st.radio("How will the home factor into paying for care?", [
             "Keep living in the home (don't tap equity)","Sell the home (use net proceeds)","Use reverse mortgage (HECM)","Consider a HELOC (home equity line)"
-        ], index=0)
+        ], index=0, key="home_plan")
         inp["maintain_home"]= (plan.startswith("Keep"))
         inp["home_to_assets"]= (plan.startswith("Sell"))
         inp["expect_hecm"]= ("HECM" in plan)
         inp["expect_heloc"]= ("HELOC" in plan)
 
-        if st.button("Continue →", type="primary"): st.session_state.step=2; st.rerun()
+        # Re-added: net proceeds if selling
+        if inp["home_to_assets"]:
+            st.subheader("Home sale estimate")
+            c1,c2,c3 = st.columns(3)
+            with c1:
+                sell = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price",0.0)), step=1000.0, format="%.2f", key="sell_price_key")
+            with c2:
+                payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff",0.0)), step=1000.0, format="%.2f", key="mortgage_payoff_key")
+            with c3:
+                fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees",0.0)), step=500.0, format="%.2f", key="selling_fees_key")
+            net = max(0.0, sell - payoff - fees)
+            inp.update({"sell_price":sell,"mortgage_payoff":payoff,"selling_fees":fees,"home_equity":net})
+            st.info(f"Estimated net proceeds added to Assets: {mfmt(net)}")
+
+        if st.button("Continue →", type="primary", key="to_step2"): st.session_state.step=2; st.rerun()
 
     elif step==2:
         st.header("Step 2 · Choose care plans")
@@ -221,55 +250,57 @@ def main():
         person("a", names.get("A","Person A"), default_stay=False)
         if include_b:
             st.subheader("Spouse / Partner / Second Parent")
-            # if audience was spouse/parent and included B only for costs, default to Stay at Home
             default_stay = st.session_state.get("who") in ["I'm planning for my spouse/partner","I'm planning for my parent/parent-in-law"]
             person("b", names.get("B","Person B"), default_stay=default_stay)
 
-        if st.button("Continue to finances →", type="primary"): st.session_state.step=3; st.rerun()
-        if st.button("← Back"): st.session_state.step=1; st.rerun()
+        c1,c2 = st.columns(2)
+        if c1.button("← Back", key="back_to_step1"): st.session_state.step=1; st.rerun()
+        if c2.button("Continue to finances →", type="primary", key="to_step3"): st.session_state.step=3; st.rerun()
 
     elif step==3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. The summary updates live.")
-        # Minimal but functional drawers:
-        with st.expander(f"Income — {st.session_state.names.get('A','Person A')}", expanded=False):
-            inp["ss_a"]=st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_a",0.0)), step=50.0)
-            inp["pension_a"]=st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_a",0.0)), step=50.0)
+        # Give each input a unique key to avoid DuplicateElementId
+        names=st.session_state.get("names",{"A":"Person A","B":"Person B"})
+        with st.expander(f"Income — {names.get('A','Person A')}", expanded=False):
+            inp["ss_a"]=st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_a",0.0)), step=50.0, key="ss_a_key")
+            inp["pension_a"]=st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_a",0.0)), step=50.0, key="pension_a_key")
         if st.session_state.get("include_b", False):
-            with st.expander(f"Income — {st.session_state.names.get('B','Person B')}", expanded=False):
-                inp["ss_b"]=st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_b",0.0)), step=50.0)
-                inp["pension_b"]=st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_b",0.0)), step=50.0)
+            with st.expander(f"Income — {names.get('B','Person B')}", expanded=False):
+                inp["ss_b"]=st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_b",0.0)), step=50.0, key="ss_b_key")
+                inp["pension_b"]=st.number_input("Pension (monthly)", min_value=0.0, value=float(inp.get("pension_b",0.0)), step=50.0, key="pension_b_key")
         with st.expander("Income — Additional household", expanded=False):
-            inp["rental_income"]=st.number_input("Rental income (monthly)", min_value=0.0, value=float(inp.get("rental_income",0.0)), step=50.0)
-            inp["wages_part_time"]=st.number_input("Wages (part-time)", min_value=0.0, value=float(inp.get("wages_part_time",0.0)), step=50.0)
-            inp["alimony_support"]=st.number_input("Alimony / support received", min_value=0.0, value=float(inp.get("alimony_support",0.0)), step=50.0)
-            inp["dividends_interest"]=st.number_input("Dividends & interest", min_value=0.0, value=float(inp.get("dividends_interest",0.0)), step=50.0)
-            inp["other_income_monthly"]=st.number_input("Other income (monthly)", min_value=0.0, value=float(inp.get("other_income_monthly",0.0)), step=50.0)
+            inp["rental_income"]=st.number_input("Rental income (monthly)", min_value=0.0, value=float(inp.get("rental_income",0.0)), step=50.0, key="rental_income_key")
+            inp["wages_part_time"]=st.number_input("Wages (part-time)", min_value=0.0, value=float(inp.get("wages_part_time",0.0)), step=50.0, key="wages_part_time_key")
+            inp["alimony_support"]=st.number_input("Alimony / support received", min_value=0.0, value=float(inp.get("alimony_support",0.0)), step=50.0, key="alimony_support_key")
+            inp["dividends_interest"]=st.number_input("Dividends & interest", min_value=0.0, value=float(inp.get("dividends_interest",0.0)), step=50.0, key="dividends_interest_key")
+            inp["other_income_monthly"]=st.number_input("Other income (monthly)", min_value=0.0, value=float(inp.get("other_income_monthly",0.0)), step=50.0, key="other_income_monthly_key")
         with st.expander("Benefits — VA Aid & Attendance", expanded=False):
             cats=list(spec["lookups"]["va_categories"].keys())
             def catdisplay(c): return f"{c} ({mfmt(spec['lookups']['va_categories'][c])})"
-            inp["va_cat_a"]= st.selectbox(f"VA category — {st.session_state.names.get('A','Person A')}", [catdisplay(c) for c in cats], index=0).split(" (")[0]
+            inp["va_cat_a"]= st.selectbox(f"VA category — {names.get('A','Person A')}", [catdisplay(c) for c in cats], index=0, key="va_cat_a_key").split(" (")[0]
             if st.session_state.get("include_b", False):
-                inp["va_cat_b"]= st.selectbox(f"VA category — {st.session_state.names.get('B','Person B')}", [catdisplay(c) for c in cats], index=0).split(" (")[0]
+                inp["va_cat_b"]= st.selectbox(f"VA category — {names.get('B','Person B')}", [catdisplay(c) for c in cats], index=0, key="va_cat_b_key").split(" (")[0]
             st.caption("We compute VA benefit automatically based on MAPR, your countable income, and medical deductions.")
         with st.expander("Other monthly costs (optional)", expanded=False):
-            inp["medicare"]=st.number_input("Medicare premiums", 0.0, value=float(inp.get("medicare",0.0)), step=25.0)
-            inp["dvh"]=st.number_input("Dental / vision / hearing", 0.0, value=float(inp.get("dvh",0.0)), step=25.0)
-            inp["rx"]=st.number_input("Prescriptions (optional)", 0.0, value=float(inp.get("rx",0.0)), step=25.0)
-            inp["personal"]=st.number_input("Personal care (optional)", 0.0, value=float(inp.get("personal",0.0)), step=25.0)
-            inp["other_monthly"]=st.number_input("Other monthly costs", 0.0, value=float(inp.get("other_monthly",0.0)), step=25.0)
+            inp["medicare"]=st.number_input("Medicare premiums", 0.0, value=float(inp.get("medicare",0.0)), step=25.0, key="medicare_key")
+            inp["dvh"]=st.number_input("Dental / vision / hearing", 0.0, value=float(inp.get("dvh",0.0)), step=25.0, key="dvh_key")
+            inp["rx"]=st.number_input("Prescriptions (optional)", 0.0, value=float(inp.get("rx",0.0)), step=25.0, key="rx_key")
+            inp["personal"]=st.number_input("Personal care (optional)", 0.0, value=float(inp.get("personal",0.0)), step=25.0, key="personal_key")
+            inp["other_monthly"]=st.number_input("Other monthly costs", 0.0, value=float(inp.get("other_monthly",0.0)), step=25.0, key="other_monthly_key")
         with st.expander("Assets — Common balances", expanded=False):
-            inp["cash_savings"]=st.number_input("Cash and savings", 0.0, value=float(inp.get("cash_savings",0.0)), step=100.0)
-            inp["brokerage_taxable"]=st.number_input("Brokerage (taxable) total", 0.0, value=float(inp.get("brokerage_taxable",0.0)), step=100.0)
-            inp["ira_traditional"]=st.number_input("Traditional IRA balance", 0.0, value=float(inp.get("ira_traditional",0.0)), step=100.0)
-            inp["ira_roth"]=st.number_input("Roth IRA balance", 0.0, value=float(inp.get("ira_roth",0.0)), step=100.0)
-            inp["ira_total"]=st.number_input("IRA total (leave 0 if using granular lines)", 0.0, value=float(inp.get("ira_total",0.0)), step=100.0)
-            inp["employer_401k"]=st.number_input("401(k) balance", 0.0, value=float(inp.get("employer_401k",0.0)), step=100.0)
-            inp["home_equity"]=st.number_input("Home equity", 0.0, value=float(inp.get("home_equity",0.0)), step=100.0)
-            inp["annuity_surrender"]=st.number_input("Annuities (surrender value)", 0.0, value=float(inp.get("annuity_surrender",0.0)), step=100.0)
+            inp["cash_savings"]=st.number_input("Cash and savings", 0.0, value=float(inp.get("cash_savings",0.0)), step=100.0, key="cash_savings_key")
+            inp["brokerage_taxable"]=st.number_input("Brokerage (taxable) total", 0.0, value=float(inp.get("brokerage_taxable",0.0)), step=100.0, key="brokerage_taxable_key")
+            inp["ira_traditional"]=st.number_input("Traditional IRA balance", 0.0, value=float(inp.get("ira_traditional",0.0)), step=100.0, key="ira_traditional_key")
+            inp["ira_roth"]=st.number_input("Roth IRA balance", 0.0, value=float(inp.get("ira_roth",0.0)), step=100.0, key="ira_roth_key")
+            inp["ira_total"]=st.number_input("IRA total (leave 0 if using granular lines)", 0.0, value=float(inp.get("ira_total",0.0)), step=100.0, key="ira_total_key")
+            inp["employer_401k"]=st.number_input("401(k) balance", 0.0, value=float(inp.get("employer_401k",0.0)), step=100.0, key="employer_401k_key")
+            inp["home_equity"]=st.number_input("Home equity", 0.0, value=float(inp.get("home_equity",0.0)), step=100.0, key="home_equity_key")
+            inp["annuity_surrender"]=st.number_input("Annuities (surrender value)", 0.0, value=float(inp.get("annuity_surrender",0.0)), step=100.0, key="annuity_surrender_key")
 
-        if st.button("Calculate →", type="primary"): st.session_state.step=4; st.rerun()
-        if st.button("← Back"): st.session_state.step=2; st.rerun()
+        c1,c2 = st.columns(2)
+        if c1.button("← Back", key="back_to_step2"): st.session_state.step=2; st.rerun()
+        if c2.button("Calculate →", type="primary", key="to_step4"): st.session_state.step=4; st.rerun()
 
     else:
         st.header("Step 4 · Results")
@@ -284,7 +315,7 @@ def main():
         with c3:
             st.metric("VA benefit — A", mfmt(res["va_a"]))
             st.metric("VA benefit — B", mfmt(res["va_b"]))
-        if st.button("Start over"):
+        if st.button("Start over", key="start_over"):
             st.session_state.clear(); st.rerun()
 
 if __name__ == "__main__":
