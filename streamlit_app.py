@@ -767,47 +767,78 @@ def main():
 
         # -------- Home modifications ONE-TIME drawer with suggested ranges --------
         with st.expander("Home modifications (one-time costs)", expanded=False):
-            st.caption("Check what you expect to install, then adjust the suggested cost. Ranges reflect typical installs; your costs may vary.")
-            # (min, max, default, slider?, step)
-            HOMEMOD_SPECS = {
-                "grab_bars":          {"label":"Grab bars and rails",      "min":200,  "max":500,   "default":250,  "slider":False, "step":50,  "note":"Typical range $200–$500 (parts + basic install)."},
-                "ramps":              {"label":"Wheelchair ramps",         "min":1000, "max":5000,  "default":2500, "slider":True,  "step":100, "note":"Range varies by length/material and permits."},
-                "bath_mods":          {"label":"Bathroom modifications",   "min":2000, "max":15000, "default":7500, "slider":True,  "step":250, "note":"Basic safety upgrades to full shower conversions."},
-                "stair_lift":         {"label":"Stair lift",               "min":3000, "max":8000,  "default":5000, "slider":True,  "step":250, "note":"Straight runs cost less; curves cost more."},
-                "widen_doors":        {"label":"Widening doors",           "min":700,  "max":2500,  "default":1500, "slider":True,  "step":100, "note":"Depends on structure, electrical, finish work."},
-                "other_home_mods":    {"label":"Other modifications",      "min":0,    "max":20000, "default":0,    "slider":False, "step":100, "note":"Describe and enter the expected cost."},
-            }
-            total = 0.0
-            for key, spec_item in HOMEMOD_SPECS.items():
-                enabled = st.checkbox(spec_item["label"], value=bool(inp.get(f"hm_enable_{key}", False)), key=f"hm_enable_{key}")
-                inp[f"hm_enable_{key}"] = enabled
-                if enabled:
-                    if spec_item["slider"]:
-                        val = st.slider(
-                            f"Estimated cost — {spec_item['label']}",
-                            min_value=float(spec_item["min"]),
-                            max_value=float(spec_item["max"]),
-                            value=float(inp.get(f"hm_{key}", spec_item["default"])),
-                            step=float(spec_item["step"]),
-                            key=f"hm_slider_{key}"
-                        )
-                    else:
-                        val = st.number_input(
-                            f"Estimated cost — {spec_item['label']}",
-                            min_value=float(spec_item["min"]),
-                            max_value=float(spec_item["max"]),
-                            value=float(inp.get(f"hm_{key}", spec_item["default"])),
-                            step=float(spec_item["step"]),
-                            format="%.2f",
-                            key=f"hm_input_{key}"
-                        )
-                    st.caption(spec_item["note"])
-                    inp[f"hm_{key}"] = float(val)
-                    total += float(val)
-                else:
-                    inp[f"hm_{key}"] = 0.0
-            inp["home_mods_one_time_total"] = total
-            st.info(f"Estimated total one-time home modifications: {mfmt(total)}")
+    st.caption("Check what you expect to install. Use a quick pick or enter a custom amount. Ranges reflect typical installs; your costs may vary.")
+
+    # spec: min, max, avg, step
+    HOMEMOD_SPECS = {
+        "grab_bars":       {"label":"Grab bars and rails",      "min":200,  "max":500,   "avg":250,  "step":25,  "note":"Typical: $200–$500 • Avg $250"},
+        "ramps":           {"label":"Wheelchair ramps",         "min":1000, "max":5000,  "avg":2500, "step":100, "note":"Typical: $1,000–$5,000 • Avg $2,500"},
+        "bath_mods":       {"label":"Bathroom modifications",   "min":2000, "max":15000, "avg":7500, "step":250, "note":"Typical: $2,000–$15,000 • Avg $7,500"},
+        "stair_lift":      {"label":"Stair lift",               "min":3000, "max":8000,  "avg":5000, "step":250, "note":"Typical: $3,000–$8,000 • Avg $5,000"},
+        "widen_doors":     {"label":"Widening doors",           "min":700,  "max":2500,  "avg":1500, "step":100, "note":"Typical: $700–$2,500 • Avg $1,500"},
+        "other_home_mods": {"label":"Other modifications",      "min":0,    "max":20000, "avg":0,    "step":100, "note":"Enter your best estimate."},
+    }
+
+    def _clamp(v, lo, hi):
+        try:
+            x = float(v)
+        except Exception:
+            x = float(lo)
+        return float(max(lo, min(hi, x)))
+
+    total = 0.0
+    for key, cfg in HOMEMOD_SPECS.items():
+        enabled = st.checkbox(cfg["label"], value=bool(inp.get(f"hm_enable_{key}", False)), key=f"hm_enable_{key}")
+        inp[f"hm_enable_{key}"] = enabled
+
+        if not enabled:
+            inp[f"hm_{key}"] = 0.0
+            continue
+
+        # quick pick
+        cols = st.columns([2, 2, 2, 3])
+        with cols[0]:
+            st.caption(cfg["note"])
+        with cols[1]:
+            pick = st.radio(
+                "Pick a level",
+                options=["Basic", "Typical", "Extensive", "Custom"],
+                index={"Basic":0,"Typical":1,"Extensive":2,"Custom":3}.get(st.session_state.get(f"hm_pick_{key}","Typical"),1),
+                horizontal=True,
+                label_visibility="collapsed",
+                key=f"hm_pick_{key}",
+                help="Basic = lower end of range, Typical = average, Extensive = upper end."
+            )
+
+        # derive value
+        if pick == "Basic":
+            value = cfg["min"]
+        elif pick == "Typical":
+            value = cfg["avg"]
+        elif pick == "Extensive":
+            value = cfg["max"]
+        else:
+            # custom with safe default and clamping to avoid StreamlitValueBelowMinError
+            default = inp.get(f"hm_{key}", cfg["avg"])
+            default = _clamp(default, cfg["min"], cfg["max"])
+            value = st.number_input(
+                "Custom amount",
+                min_value=float(cfg["min"]),
+                max_value=float(cfg["max"]),
+                value=float(default),
+                step=float(cfg["step"]),
+                format="%.2f",
+                key=f"hm_input_{key}"
+            )
+
+        # show the chosen value readably (and store it)
+        with cols[-1]:
+            st.metric("Estimated cost", mfmt(value))
+        inp[f"hm_{key}"] = float(value)
+        total += float(value)
+
+    inp["home_mods_one_time_total"] = total
+    st.info(f"Estimated total one-time home modifications: {mfmt(total)}")
 
         st.divider()
         c1, c2 = st.columns(2)
