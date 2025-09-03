@@ -425,8 +425,6 @@ elif st.session_state.step == 3:
                 expand_default = True
         with st.expander(f"{label} — {g.get('prompt','')}", expanded=expand_default):
             ans = {}
-            if gid.startswith("group_income"):
-                inputs["re_investment_income"] = st.number_input("Other household income (investments, etc.)", min_value=0.0, value=float(inputs.get("re_investment_income", 0.0)), step=50.0, format="%.2f")
             if gid == "group_assets":
                 if inputs.get("home_to_assets"):
                     st.caption("Home equity will be populated from **Home sale estimate** above.")
@@ -497,6 +495,12 @@ elif st.session_state.step == 3:
     name_map = {"A": st.session_state.name_hint["A"], "B": st.session_state.name_hint["B"]}
     with st.form("finances_form"):
         grouped = {}
+        # Household-level additional income (render once)
+        inputs["re_investment_income"] = st.number_input(
+            "Other household income (investments, etc.)", min_value=0.0,
+            value=float(inputs.get("re_investment_income", 0.0)), step=50.0,
+            format="%.2f", key="re_investment_income_input"
+        )
         for cat, gids in CATEGORY_MAP.items():
             st.markdown(f"### {cat}")
             for gid in gids:
