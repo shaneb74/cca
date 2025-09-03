@@ -59,110 +59,144 @@
       }
     }
   },
+  "ui_group_overrides": {
+    "group_assets": {
+      "module": "hidden",
+      "label": " ",
+      "replace_fields": []
+    },
+    "group_assets_summary": {
+      "module": "hidden",
+      "label": " ",
+      "replace_fields": []
+    }
+  },
   "ui_group_additions": [
     {
-      "id": "group_assets_detail",
+      "id": "group_assets_common",
       "module": "assets",
-      "label": "Assets \u2014 Detailed balances",
-      "prompt": "Enter current balances. Use totals or fill granular fields; both will roll up to the results.",
+      "label": "Assets \u2014 Common balances",
+      "prompt": "Enter typical balances. Withdrawals belong in Income, not here.",
       "fields": [
         {
           "field": "cash_savings",
           "label": "Cash and savings (checking, savings, MMAs)",
           "kind": "currency",
           "default": 0,
-          "tooltip": "Liquid cash you can access now."
-        },
-        {
-          "field": "cds_balance",
-          "label": "Certificates of deposit (CDs)",
-          "kind": "currency",
-          "default": 0
+          "tooltip": "Liquid accounts you can access now."
         },
         {
           "field": "brokerage_taxable",
           "label": "Brokerage (taxable) total",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Taxable investment accounts (not retirement)."
         },
         {
           "field": "ira_traditional",
           "label": "Traditional IRA balance",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Pre\u2011tax IRA."
         },
         {
           "field": "ira_roth",
           "label": "Roth IRA balance",
           "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "ira_sep",
-          "label": "SEP IRA balance",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "ira_simple",
-          "label": "SIMPLE IRA balance",
-          "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Post\u2011tax IRA (qualified withdrawals tax\u2011free)."
         },
         {
           "field": "ira_total",
           "label": "IRA total (leave 0 if using the granular IRA lines above)",
           "kind": "currency",
           "default": 0,
-          "tooltip": "Use if you prefer a single IRA number."
+          "tooltip": "Use a single number if you prefer not to split TRAD/Roth."
         },
         {
           "field": "employer_401k",
           "label": "401(k) balance",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Employer retirement 401(k)."
         },
         {
-          "field": "employer_403b",
-          "label": "403(b) balance",
+          "field": "home_equity",
+          "label": "Home equity (net you could access/sell)",
           "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "employer_457b",
-          "label": "457(b) balance",
-          "kind": "currency",
-          "default": 0
-        },
-        {
-          "field": "employer_retirement_total",
-          "label": "Employer retirement total (leave 0 if entering 401k/403b/457b above)",
-          "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "If selling, use Step 1 'Sell the home' to estimate net; it flows here."
         },
         {
           "field": "annuity_surrender",
           "label": "Annuities (surrender value)",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Enter value after surrender charges/fees, if any."
+        }
+      ]
+    },
+    {
+      "id": "group_assets_more",
+      "module": "assets",
+      "label": "More asset types (optional)",
+      "prompt": "Open if you have these. Otherwise ignore this section.",
+      "fields": [
+        {
+          "field": "cds_balance",
+          "label": "Certificates of deposit (CDs)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Time deposits at banks/credit unions."
+        },
+        {
+          "field": "employer_403b",
+          "label": "403(b) balance",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Typically for public/NGO employees."
+        },
+        {
+          "field": "employer_457b",
+          "label": "457(b) balance",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Governmental 457(b) plans."
+        },
+        {
+          "field": "ira_sep",
+          "label": "SEP IRA balance",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Simplified Employee Pension IRA."
+        },
+        {
+          "field": "ira_simple",
+          "label": "SIMPLE IRA balance",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Savings Incentive Match Plan for Employees."
         },
         {
           "field": "life_cash_value",
           "label": "Life insurance cash value",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Whole/Universal life policies cash value."
         },
         {
           "field": "hsa_balance",
           "label": "HSA balance",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Health Savings Account."
         },
         {
           "field": "other_assets",
-          "label": "Other assets (legacy catch\u2011all)",
+          "label": "Other assets (catch\u2011all)",
           "kind": "currency",
-          "default": 0
+          "default": 0,
+          "tooltip": "Anything not listed above."
         }
       ]
     }
