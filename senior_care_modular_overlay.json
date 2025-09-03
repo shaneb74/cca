@@ -1,64 +1,5 @@
 {
-  "lookups": {
-    "va_categories": {
-      "None": 0.0,
-      "Veteran only (A&A)": 2358.33,
-      "Veteran with spouse (A&A)": 2795.67,
-      "Two veterans married, both A&A (household ceiling)": 3740.5,
-      "Surviving spouse (A&A)": 1515.58,
-      "Surviving spouse + 1 child (A&A)": 1808.0
-    },
-    "home_mod_specs": {
-      "grab_bars": {
-        "label": "Grab bars and rails",
-        "min": 200,
-        "max": 500,
-        "avg": 250,
-        "step": 25,
-        "note": "Typical: $200\u2013$500 \u2022 Avg $250"
-      },
-      "ramps": {
-        "label": "Wheelchair ramps",
-        "min": 1000,
-        "max": 5000,
-        "avg": 2500,
-        "step": 100,
-        "note": "Typical: $1,000\u2013$5,000 \u2022 Avg $2,500"
-      },
-      "bath_mods": {
-        "label": "Bathroom modifications",
-        "min": 2000,
-        "max": 15000,
-        "avg": 7500,
-        "step": 250,
-        "note": "Typical: $2,000\u2013$15,000 \u2022 Avg $7,500"
-      },
-      "stair_lift": {
-        "label": "Stair lift",
-        "min": 3000,
-        "max": 8000,
-        "avg": 5000,
-        "step": 250,
-        "note": "Typical: $3,000\u2013$8,000 \u2022 Avg $5,000"
-      },
-      "widen_doors": {
-        "label": "Widening doors",
-        "min": 700,
-        "max": 2500,
-        "avg": 1500,
-        "step": 100,
-        "note": "Typical: $700\u2013$2,500 \u2022 Avg $1,500"
-      },
-      "other_home_mods": {
-        "label": "Other modifications",
-        "min": 0,
-        "max": 20000,
-        "avg": 0,
-        "step": 100,
-        "note": "Enter your best estimate."
-      }
-    }
-  },
+  "lookups": {},
   "ui_group_overrides": {
     "group_assets": {
       "module": "hidden",
@@ -108,7 +49,7 @@
         },
         {
           "field": "ira_total",
-          "label": "IRA total (leave 0 if using the granular IRA lines above)",
+          "label": "IRA total (leave 0 if using the granular lines above)",
           "kind": "currency",
           "default": 0,
           "tooltip": "Use a single number if you prefer not to split TRAD/Roth."
@@ -197,6 +138,48 @@
           "kind": "currency",
           "default": 0,
           "tooltip": "Anything not listed above."
+        }
+      ]
+    },
+    {
+      "id": "group_income_household",
+      "module": "income",
+      "label": "Income \u2014 Additional household",
+      "prompt": "Other monthly income that isn\u2019t tied to one person.",
+      "fields": [
+        {
+          "field": "rental_income",
+          "label": "Rental income (monthly)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Net, after typical expenses."
+        },
+        {
+          "field": "wages_part_time",
+          "label": "Wages (part-time)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Side jobs, sporadic work."
+        },
+        {
+          "field": "alimony_support",
+          "label": "Alimony / support received",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "dividends_interest",
+          "label": "Dividends & interest",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Taxable investment income."
+        },
+        {
+          "field": "other_income_monthly",
+          "label": "Other income (monthly)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Anything else regular and countable."
         }
       ]
     }
