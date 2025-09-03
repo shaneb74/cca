@@ -1,16 +1,16 @@
 # streamlit_app.py
-# Senior Care Cost Planner – demo-ready with reactive Step 1 and Step 2
-# Files expected next to this file:
+# Senior Care Cost Planner – reactive steps + tooltips + descriptive options + home mods box
+# Expects:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
 #   - senior_care_modular_overlay.json
 
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix-reactive-step1-2"
+APP_VERSION = "v2025-09-03-demofix-reactive-step1-2-tooltips-homemods"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -125,7 +125,9 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
         if care_type and care_type.startswith("In-Home Care"):
             hours = int(inputs.get(f"hours_per_day_person_{tag_letter}", 0) or 0)
             hours = max(0, min(24, hours))
-            days = int(inputs.get(f"days_per_month_person_{tag_letter}", default_days_per_month) or default_days_per_month)
+            # default to 20 if not set
+            days_default = 20
+            days = int(inputs.get(f"days_per_month_person_{tag_letter}", days_default) or days_default)
             days = max(0, min(31, days))
             daily_cost_for_hours = interp_in_home_daily(hours)
             mob_home = mobility_adders_home.get(mobility, 0.0)
@@ -175,9 +177,9 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
     ltc_total = 0.0
     if str(inputs.get("ltc_insurance_person_a", "No")).lower() in {"yes","true","1"}:
-        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
+        ltc_total += ltc_monthly_add
     if str(inputs.get("ltc_insurance_person_b", "No")).lower() in {"yes","true","1"}:
-        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
+        ltc_total += ltc_monthly_add
 
     hecm = float(inputs.get("hecm_draw_monthly", 0.0))
     heloc_draw = float(inputs.get("heloc_draw_monthly", 0.0))
@@ -223,6 +225,7 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
         "monthly_gap": gap,
         "total_assets": total_assets,
         "years_funded_cap30": years,
+        "home_mods_one_time_total": money(float(inputs.get("home_mods_one_time_total", 0.0)))
     }
 
 # ------------------------------- UI bits ----------------------------------
@@ -250,6 +253,7 @@ def sidebar_summary(results: Dict[str, Any]):
     st.sidebar.metric("Household income", mfmt(results.get("household_income",0)))
     gap = results.get("monthly_gap", 0)
     st.sidebar.metric(("RED" if gap > 0 else "GREEN") + " Monthly gap", mfmt(gap))
+    st.sidebar.metric("One-time home mods", mfmt(results.get("home_mods_one_time_total", 0)))
     y = results.get("years_funded_cap30")
     st.sidebar.metric("Years funded (cap 30)", "N/A" if y is None else y)
     st.sidebar.markdown("---")
@@ -283,6 +287,21 @@ def progress_header(step: int):
                 st.markdown(f"🟦 **{labels[i-1]}**")
             else:
                 st.markdown(f"▫️ {labels[i-1]}")
+
+# -------- helpers for descriptive select labels keeping original keys -----
+def build_descriptive_options(keys: List[str], desc_map: Dict[str, str]) -> Tuple[List[str], Dict[str, str]]:
+    """
+    Returns (display_labels, display_to_key_map).
+    For each key, if we have a description, we render "Key (desc)".
+    """
+    labels = []
+    mapping = {}
+    for k in keys:
+        desc = desc_map.get(k)
+        label = f"{k} ({desc})" if desc else k
+        labels.append(label)
+        mapping[label] = k
+    return labels, mapping
 
 # ------------------------------- main app ---------------------------------
 def main():
@@ -410,10 +429,33 @@ def main():
             st.session_state.step = 2
             st.rerun()
 
-    # ---------------- Step 2 (reactive, no form so the dropdown swaps widgets immediately)
+    # ---------------- Step 2 (reactive)
     elif step == 2:
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
+
+        # descriptive dictionaries (used if keys match)
+        care_level_desc = {
+            "Low": "help with a few daily tasks",
+            "Medium": "daily support with several tasks",
+            "High": "extensive supervision and care"
+        }
+        # Mobility keys in your lookups might be either these or Low/Medium/High
+        mobility_desc_preferred = {
+            "No support needed": "independent",
+            "Walker": "needs walker or similar",
+            "Wheelchair": "primarily wheelchair"
+        }
+        mobility_desc_alt = {
+            "Low": "no mobility support",
+            "Medium": "walker or cane",
+            "High": "wheelchair or total assist"
+        }
+        chronic_desc = {
+            "None": "no chronic conditions",
+            "Some": "one or two managed conditions",
+            "Multiple/Complex": "multiple conditions or complex care"
+        }
 
         def care_options_for(tag_key: str) -> List[str]:
             base = [
@@ -423,7 +465,7 @@ def main():
                 "Memory Care",
             ]
             include_b = st.session_state.include_b
-            person_idx = tag_key[-1]  # 'a' or 'b'
+            person_idx = tag_key[-1]
             if not include_b:
                 return [c for c in base if not c.startswith("Stay")]
             if person_idx == "a":
@@ -432,54 +474,87 @@ def main():
 
         def render_person(tag_key: str, display_name: str):
             choices = care_options_for(tag_key)
-
-            # Default to In-Home Care if available
             default_idx = 0
             for i, c in enumerate(choices):
                 if c.startswith("In-Home Care"):
                     default_idx = i
                     break
 
-            care = st.selectbox(f"Care type for {display_name}", choices, index=default_idx, key=f"care_type_{tag_key}")
+            care = st.selectbox(
+                f"Care type for {display_name}",
+                choices, index=default_idx, key=f"care_type_{tag_key}",
+                help="Choose the general setting for care. In-home is care where the person lives now; Assisted Living/Memory Care are residential communities."
+            )
             inp[f"care_type_person_{tag_key[-1]}"] = care
             inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
 
-            # dynamic region
             if care.startswith("In-Home Care"):
-                hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0) or 0)
+                hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 4) or 4)
                 hours_val = max(0, min(24, hours_val))
-                hours = st.slider("Hours of paid care per day (0-24)",
+                hours = st.slider("Hours of paid care per day (0–24)",
                                   min_value=0, max_value=24, value=hours_val, step=1,
-                                  key=f"hours_slider_{tag_key}")
+                                  key=f"hours_slider_{tag_key}",
+                                  help="Typical starter plans are 2–4 hours per day.")
                 inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
 
-                default_days = int(spec.get("settings", {}).get("days_per_month", 30))
-                days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", default_days) or default_days)
+                days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", 20) or 20)
                 days_val = max(0, min(31, days_val))
-                days = st.slider("Days of paid care per month (0-31)",
+                days = st.slider("Days of paid care per month (0–31)",
                                  min_value=0, max_value=31, value=days_val, step=1,
-                                 key=f"days_slider_{tag_key}")
+                                 key=f"days_slider_{tag_key}",
+                                 help="Most families schedule care 15–25 days each month.")
                 inp[f"days_per_month_person_{tag_key[-1]}"] = int(days)
-
-                st.caption("Tip: many families start with 2–4 hours/day around 20 days/month.")
 
             elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
                 room_types = list(spec.get("lookups", {}).get("room_type", {}).keys()) or ["Studio", "1 Bedroom", "Shared"]
-                room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}")
+                room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}",
+                                    help="Typical options are Studio, 1 Bedroom, or Shared.")
                 inp[f"room_type_person_{tag_key[-1]}"] = room
 
-            # common selectors
-            level = st.selectbox("Care level", ["Low", "Medium", "High"], index=1, key=f"level_{tag_key}")
-            inp[f"care_level_person_{tag_key[-1]}"] = level
+            # ---- Care level with descriptive labels ----
+            level_keys = ["Low", "Medium", "High"]
+            level_labels, level_map = build_descriptive_options(level_keys, care_level_desc)
+            level_display = st.selectbox(
+                "Care level",
+                level_labels, index=level_labels.index([l for l in level_labels if l.startswith("Medium")][0]),
+                key=f"level_{tag_key}",
+                help="How much day-to-day help is needed."
+            )
+            inp[f"care_level_person_{tag_key[-1]}"] = level_map[level_display]
 
-            mob_keys = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
-            mob = st.selectbox("Mobility", mob_keys, index=min(1, len(mob_keys)-1), key=f"mob_{tag_key}")
-            inp[f"mobility_person_{tag_key[-1]}"] = mob
+            # ---- Mobility with descriptive labels (prefer No support/Walker/Wheelchair if present) ----
+            mobility_keys_lookup = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
+            if set(mobility_keys_lookup) >= {"No support needed","Walker","Wheelchair"}:
+                mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_preferred)
+            else:
+                mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_alt)
 
+            # pick Medium/Walker by default if available
+            default_mob_label = mob_labels[0]
+            for lbl in mob_labels:
+                if "walker" in lbl.lower() or "medium" in lbl.lower():
+                    default_mob_label = lbl
+                    break
+
+            mob_display = st.selectbox(
+                "Mobility",
+                mob_labels, index=mob_labels.index(default_mob_label),
+                key=f"mob_{tag_key}",
+                help="Select equipment or assistance typically used for getting around."
+            )
+            inp[f"mobility_person_{tag_key[-1]}"] = mob_map[mob_display]
+
+            # ---- Chronic conditions with descriptive labels ----
             cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
-            cc_default = 0 if "None" in cc_keys else 1
-            cc = st.selectbox("Chronic conditions", cc_keys, index=min(cc_default, len(cc_keys)-1), key=f"cc_{tag_key}")
-            inp[f"chronic_person_{tag_key[-1]}"] = cc
+            cc_labels, cc_map = build_descriptive_options(cc_keys, chronic_desc)
+            # default to "None"
+            cc_display = st.selectbox(
+                "Chronic conditions",
+                cc_labels, index=cc_labels.index([l for l in cc_labels if l.startswith("None")][0]) if any(l.startswith("None") for l in cc_labels) else 0,
+                key=f"cc_{tag_key}",
+                help="General health complexity. Choose “Some” for one or two managed conditions; “Multiple/Complex” for several or advanced."
+            )
+            inp[f"chronic_person_{tag_key[-1]}"] = cc_map[cc_display]
 
         render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
         if st.session_state.include_b:
@@ -575,6 +650,27 @@ def main():
                     if ans:
                         grouped_answers[gid] = ans
 
+            # -------- Home modifications one-time box --------
+            st.markdown("### Home modifications (one-time costs)")
+            st.caption("These are upfront improvements to make the home safer and more accessible. They are **not** included in monthly expenses.")
+            mods = [
+                ("Entry ramp", "Typical range $800–$3,000"),
+                ("Bathroom: grab bars & non-slip", "$150–$800"),
+                ("Walk-in shower / tub conversion", "$2,500–$8,000"),
+                ("Widen interior doors", "$400–$1,200 per door"),
+                ("Stair lift", "$2,000–$8,000"),
+                ("Improved lighting & switches", "$200–$1,000"),
+                ("Smart home safety (sensors/cameras)", "$150–$600"),
+                ("Threshold/transition ramps", "$50–$250 each"),
+                ("Other one-time modification", "enter any additional item")
+            ]
+            total_mods = 0.0
+            for i, (label, hint) in enumerate(mods, start=1):
+                val = st.number_input(f"{label}", min_value=0.0, step=50.0, format="%.2f", key=f"one_time_mod_{i}", help=f"Guide: {hint}")
+                total_mods += float(val)
+            st.session_state.inputs["home_mods_one_time_total"] = total_mods
+            st.info(f"Estimated one-time home modification total: **{mfmt(total_mods)}**")
+
             c1, c2 = st.columns(2)
             if c1.form_submit_button("← Back"):
                 st.session_state.step = 2
@@ -598,8 +694,9 @@ def main():
             st.metric("Monthly gap", mfmt(results.get("monthly_gap",0)))
         with c3:
             st.metric("Assets total", mfmt(results.get("total_assets",0)))
-            y = results.get("years_funded_cap30")
-            st.metric("Years funded (cap 30)", "N/A" if y is None else y)
+            st.metric("One-time home mods", mfmt(results.get("home_mods_one_time_total",0)))
+        y = results.get("years_funded_cap30")
+        st.metric("Years funded (cap 30)", "N/A" if y is None else y)
         st.info("This is an estimate. Actual prices vary. Speak with an advisor to review options.")
         st.divider()
         c1, c2 = st.columns(2)
