@@ -2,26 +2,39 @@
   "lookups": {
     "va_tiers": [
       {
+        "id": "not_applicable",
+        "label": "Not applicable",
+        "monthly": 0
+      },
+      {
         "id": "veteran_alone",
         "label": "Veteran (no spouse)",
-        "monthly": 2358.0
+        "monthly": 2154
       },
       {
         "id": "veteran_with_spouse",
         "label": "Veteran with spouse",
-        "monthly": 2795.0
+        "monthly": 2703
       },
       {
         "id": "surviving_spouse",
         "label": "Surviving spouse",
-        "monthly": 1515.0
+        "monthly": 1382
       },
       {
         "id": "two_veterans_married",
-        "label": "Two married veterans (both A&A)",
-        "monthly": 3740.0
+        "label": "Two married veterans",
+        "monthly": 2865
       }
-    ]
+    ],
+    "state_multipliers": {
+      "National": 1.0,
+      "California": 1.3,
+      "New York": 1.25,
+      "Texas": 0.95,
+      "Florida": 1.1,
+      "Illinois": 1.05
+    }
   },
   "ui_group_overrides": {
     "group_assets": {
@@ -29,6 +42,28 @@
         "*": {
           "optional": true,
           "tooltip": "Enter only if applicable based on your home plan."
+        },
+        "home_equity": {
+          "condition": {
+            "field": "home_to_assets",
+            "equals": true
+          }
+        },
+        "hecm_draw_monthly": {
+          "default": 0,
+          "condition": {
+            "field": "home_plan",
+            "equals": "Yes, use reverse mortgage (HECM)"
+          },
+          "tooltip": "Monthly draw from a reverse mortgage to supplement income."
+        },
+        "heloc_payment_monthly": {
+          "default": 0,
+          "condition": {
+            "field": "home_plan",
+            "equals": "Yes, use home equity line of credit (HELOC)"
+          },
+          "tooltip": "Monthly payment for a home equity line of credit used for care."
         }
       }
     },
@@ -36,7 +71,7 @@
       "field_overrides": {
         "va_benefit_person_a": {
           "optional": true,
-          "tooltip": "Auto-set by VA designation above."
+          "tooltip": "VA benefit amount is auto-set based on your selected tier. Verify with VA."
         }
       }
     },
@@ -44,7 +79,7 @@
       "field_overrides": {
         "va_benefit_person_b": {
           "optional": true,
-          "tooltip": "Auto-set by VA designation above."
+          "tooltip": "VA benefit amount is auto-set based on your selected tier. Verify with VA."
         }
       }
     }
