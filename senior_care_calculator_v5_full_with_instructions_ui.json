@@ -7,110 +7,83 @@
     "display_cap_years_funded": 30
   },
   "lookups": {
+    "state_multipliers": {
+      "National": 1.0,
+      "Washington": 1.08,
+      "California": 1.15,
+      "Texas": 0.98,
+      "Florida": 1.02
+    },
     "care_level_adders": {
       "Low": 0,
-      "Medium": 600,
-      "High": 1200
+      "Medium": 400,
+      "High": 900
     },
     "mobility_adders": {
       "facility": {
-        "None": 0,
-        "Walker": 150,
-        "Wheelchair": 300
+        "Low": 0,
+        "Medium": 150,
+        "High": 350
       },
       "in_home": {
-        "None": 0,
-        "Walker": 90,
-        "Wheelchair": 180
+        "Low": 0,
+        "Medium": 100,
+        "High": 250
       }
     },
     "chronic_adders": {
       "None": 0,
-      "Some conditions (manageable)": 250,
-      "Multiple conditions (complex)": 500
-    },
-    "in_home_care_matrix": {
-      "4": 30,
-      "6": 45,
-      "8": 60,
-      "10": 75,
-      "12": 90,
-      "24": 175
+      "Some": 150,
+      "Multiple/Complex": 300
     },
     "room_type": {
-      "Studio": 3700,
-      "1 Bedroom": 4400,
-      "2 Bedroom": 5200
+      "Studio": 4200,
+      "1 Bedroom": 5200,
+      "Shared": 3800
     },
-    "state_multipliers": {
-      "National": 1.0,
-      "California": 1.3,
-      "New York": 1.25,
-      "Texas": 0.95,
-      "Florida": 1.1,
-      "Illinois": 1.05
-    },
-    "va_tiers": [
-      {
-        "id": "veteran_alone",
-        "label": "Veteran (no spouse)",
-        "monthly": 2358.0
-      },
-      {
-        "id": "veteran_with_spouse",
-        "label": "Veteran with spouse",
-        "monthly": 2795.0
-      },
-      {
-        "id": "surviving_spouse",
-        "label": "Surviving spouse",
-        "monthly": 1515.0
-      },
-      {
-        "id": "two_veterans_married",
-        "label": "Two married veterans (both A&A)",
-        "monthly": 3740.0
-      }
-    ]
+    "in_home_care_matrix": {
+      "0": 0,
+      "2": 45,
+      "4": 42,
+      "6": 40,
+      "8": 38,
+      "12": 36,
+      "24": 34
+    }
   },
   "modules": [
     {
-      "id": "income",
-      "label": "Income"
+      "id": "income"
     },
     {
-      "id": "benefits",
-      "label": "Benefits (VA / LTC)"
+      "id": "benefits"
     },
     {
-      "id": "home",
-      "label": "House carry (mortgage/taxes/etc.)"
+      "id": "home"
     },
     {
-      "id": "optional",
-      "label": "Optional monthly costs"
+      "id": "optional"
     },
     {
-      "id": "assets",
-      "label": "Assets"
+      "id": "assets"
     }
   ],
   "ui_groups": [
     {
       "id": "group_income_person_a",
       "module": "income",
-      "label": "Income \u2014 Person A",
-      "prompt": "Enter monthly income (Social Security, Pension).",
+      "label": "Income \u2014 Person A \u2014 Enter monthly income (Social Security, Pension).",
+      "prompt": "",
       "fields": [
         {
           "field": "social_security_person_a",
-          "label": "Social Security \u2014 A",
+          "label": "Social Security \u2014 Person A",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "pension_person_a",
-          "label": "Pension \u2014 A",
+          "label": "Pension \u2014 Person A",
           "kind": "currency",
           "default": 0
         }
@@ -119,63 +92,51 @@
     {
       "id": "group_income_person_b",
       "module": "income",
-      "label": "Income \u2014 Person B",
-      "prompt": "Enter monthly income (Social Security, Pension).",
+      "label": "Income \u2014 Person B \u2014 Enter monthly income (Social Security, Pension).",
+      "prompt": "",
       "fields": [
         {
           "field": "social_security_person_b",
-          "label": "Social Security \u2014 B",
+          "label": "Social Security \u2014 Person B",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "pension_person_b",
-          "label": "Pension \u2014 B",
+          "label": "Pension \u2014 Person B",
           "kind": "currency",
           "default": 0
         }
       ]
     },
     {
-      "id": "group_benefits_person_a",
+      "id": "group_benefits",
       "module": "benefits",
-      "label": "Benefits \u2014 Person A",
-      "prompt": "VA Aid & Attendance and long\u2011term care insurance for Person A.",
+      "label": "Benefits",
+      "prompt": "VA Aid & Attendance, Long-Term Care insurance, and other supports.",
       "fields": [
         {
           "field": "va_benefit_person_a",
-          "label": "VA benefit (monthly $)",
+          "label": "VA benefit \u2014 Person A (monthly)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "va_benefit_person_b",
+          "label": "VA benefit \u2014 Person B (monthly)",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "ltc_insurance_person_a",
-          "label": "LTC insurance \u2014 A",
+          "label": "Long-Term Care insurance \u2014 Person A",
           "kind": "boolean",
-          "true_value": "Yes",
-          "false_value": "No",
           "default": "No"
-        }
-      ]
-    },
-    {
-      "id": "group_benefits_person_b",
-      "module": "benefits",
-      "label": "Benefits \u2014 Person B",
-      "prompt": "VA Aid & Attendance and long\u2011term care insurance for Person B.",
-      "fields": [
-        {
-          "field": "va_benefit_person_b",
-          "label": "VA benefit (monthly $) \u2014 B",
-          "kind": "currency",
-          "default": 0
         },
         {
           "field": "ltc_insurance_person_b",
-          "label": "LTC insurance \u2014 B",
+          "label": "Long-Term Care insurance \u2014 Person B",
           "kind": "boolean",
-          "true_value": "Yes",
-          "false_value": "No",
           "default": "No"
         }
       ]
@@ -183,12 +144,12 @@
     {
       "id": "group_home_carry",
       "module": "home",
-      "label": "House carry (mortgage/taxes/etc.)",
-      "prompt": "If you\u2019re keeping the home, enter monthly costs to maintain it.",
+      "label": "Home costs (if keeping the home)",
+      "prompt": "Enter monthly home-related costs.",
       "fields": [
         {
           "field": "mortgage",
-          "label": "Mortgage (P&I)",
+          "label": "Mortgage",
           "kind": "currency",
           "default": 0
         },
@@ -206,45 +167,45 @@
         },
         {
           "field": "hoa",
-          "label": "HOA (if any)",
+          "label": "HOA/condo fees",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "utilities",
-          "label": "Utilities (power/water/etc.)",
+          "label": "Utilities",
           "kind": "currency",
           "default": 0
         }
       ]
     },
     {
-      "id": "group_optional_costs",
+      "id": "group_optional",
       "module": "optional",
-      "label": "Optional monthly costs",
-      "prompt": "Other recurring costs to include.",
+      "label": "Other monthly costs (optional)",
+      "prompt": "If it doesn\u2019t apply, leave it at 0.",
       "fields": [
         {
           "field": "medicare_premiums",
-          "label": "Medicare premiums (Parts B/D/Adv.)",
+          "label": "Medicare premiums",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "dental_vision_hearing",
-          "label": "Dental / vision / hearing",
+          "label": "Dental, vision, hearing",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "home_modifications_monthly",
-          "label": "Home modifications (monthlyized)",
+          "label": "Home modifications (spread monthly)",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "other_debts_monthly",
-          "label": "Other debts (monthly)",
+          "label": "Other debts",
           "kind": "currency",
           "default": 0
         },
@@ -262,43 +223,43 @@
         },
         {
           "field": "optional_rx",
-          "label": "Prescriptions / medical supplies",
+          "label": "Prescriptions not covered",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_personal_care",
-          "label": "Personal care / toiletries",
+          "label": "Personal care",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_phone_internet",
-          "label": "Phone + Internet",
+          "label": "Phone & internet",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_life_insurance",
-          "label": "Life insurance premium(s)",
+          "label": "Life insurance premiums",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_transportation",
-          "label": "Transportation / rideshare",
+          "label": "Transportation",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_family_travel",
-          "label": "Family travel / visits",
+          "label": "Family travel",
           "kind": "currency",
           "default": 0
         },
         {
           "field": "optional_auto",
-          "label": "Auto payment(s)",
+          "label": "Auto payment",
           "kind": "currency",
           "default": 0
         },
@@ -313,24 +274,30 @@
           "label": "Other",
           "kind": "currency",
           "default": 0
+        },
+        {
+          "field": "heloc_payment_monthly",
+          "label": "HELOC payment (if any)",
+          "kind": "currency",
+          "default": 0
         }
       ]
     },
     {
       "id": "group_assets",
       "module": "assets",
-      "label": "Assets",
-      "prompt": "Enter assets available to help fund care.",
+      "label": "Assets (balances you own)",
+      "prompt": "Enter balances. Withdrawals belong in Income.",
       "fields": [
         {
-          "field": "home_equity",
-          "label": "Home equity (if selling)",
+          "field": "other_assets",
+          "label": "Other assets (legacy catch-all)",
           "kind": "currency",
           "default": 0
         },
         {
-          "field": "other_assets",
-          "label": "Other savings & investments",
+          "field": "home_equity",
+          "label": "Home equity",
           "kind": "currency",
           "default": 0
         }

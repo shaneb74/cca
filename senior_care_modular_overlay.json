@@ -1,85 +1,92 @@
 {
-  "lookups": {
-    "va_tiers": [
-      {
-        "id": "not_applicable",
-        "label": "Not applicable",
-        "monthly": 0
-      },
-      {
-        "id": "veteran_alone",
-        "label": "Veteran (no spouse)",
-        "monthly": 2154
-      },
-      {
-        "id": "veteran_with_spouse",
-        "label": "Veteran with spouse",
-        "monthly": 2703
-      },
-      {
-        "id": "surviving_spouse",
-        "label": "Surviving spouse",
-        "monthly": 1382
-      },
-      {
-        "id": "two_veterans_married",
-        "label": "Two married veterans",
-        "monthly": 2865
-      }
-    ],
-    "state_multipliers": {
-      "National": 1.0,
-      "California": 1.3,
-      "New York": 1.25,
-      "Texas": 0.95,
-      "Florida": 1.1,
-      "Illinois": 1.05
+  "ui_group_additions": [
+    {
+      "id": "group_income_household",
+      "label": "Income \u2014 Household (additional sources)",
+      "module": "income",
+      "prompt": "Monthly income that is not Social Security or Pension.",
+      "fields": [
+        {
+          "field": "disability_income",
+          "label": "Disability income \u2014 monthly",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "SSDI, VA disability, or state disability."
+        },
+        {
+          "field": "rental_income",
+          "label": "Rental income \u2014 monthly (net)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "dividends_interest",
+          "label": "Dividends & interest \u2014 monthly",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Recurring earnings from investments; not asset sales."
+        },
+        {
+          "field": "wages_part_time",
+          "label": "Wages or part-time work \u2014 monthly",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "other_income_monthly",
+          "label": "Other monthly income (alimony, trust distributions, stipends, royalties)",
+          "kind": "currency",
+          "default": 0
+        }
+      ]
     }
-  },
+  ],
   "ui_group_overrides": {
     "group_assets": {
+      "replace_fields": [
+        {
+          "field": "cash_savings",
+          "label": "Checking / Savings",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_total",
+          "label": "IRAs (Traditional + Roth combined)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "employer_retirement_total",
+          "label": "401(k) / 403(b) / 457 (combined)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "brokerage_taxable",
+          "label": "Taxable brokerage",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "other_assets_grouped",
+          "label": "Other assets (annuities cash value, CDs, HSA, collectibles, etc.)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "home_equity",
+          "label": "Home equity",
+          "kind": "currency",
+          "default": 0
+        }
+      ],
       "field_overrides": {
         "*": {
-          "optional": true,
-          "tooltip": "Enter only if applicable based on your home plan."
+          "optional": true
         },
-        "home_equity": {
-          "condition": {
-            "field": "home_to_assets",
-            "equals": true
-          }
-        },
-        "hecm_draw_monthly": {
-          "default": 0,
-          "condition": {
-            "field": "home_plan",
-            "equals": "Yes, use reverse mortgage (HECM)"
-          },
-          "tooltip": "Monthly draw from a reverse mortgage to supplement income."
-        },
-        "heloc_payment_monthly": {
-          "default": 0,
-          "condition": {
-            "field": "home_plan",
-            "equals": "Yes, use home equity line of credit (HELOC)"
-          },
-          "tooltip": "Monthly payment for a home equity line of credit used for care."
-        }
-      }
-    },
-    "group_benefits_person_a": {
-      "field_overrides": {
-        "va_benefit_person_a": {
-          "optional": true,
-          "tooltip": "VA benefit amount is auto-set based on your selected tier. Verify with VA."
-        }
-      }
-    },
-    "group_benefits_person_b": {
-      "field_overrides": {
-        "va_benefit_person_b": {
-          "optional": true,
-          "tooltip": "VA benefit amount is auto-set based on your selected tier. Verify with VA."
+        "Home equity": {
+          "tooltip": "If selling the home, net proceeds auto-populate; otherwise leave at 0."
         }
       }
     }
