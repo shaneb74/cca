@@ -320,7 +320,7 @@
       "id": "group_assets",
       "module": "assets",
       "label": "Assets",
-      "prompt": "Enter assets available to pay for care.",
+      "prompt": "Enter assets available to help fund care.",
       "fields": [
         {
           "field": "home_equity",

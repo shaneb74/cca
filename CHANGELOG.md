@@ -1,7 +1,6 @@
 # CHANGELOG
 
-## vNext
-- FIX: Indentation error removed in assets label remap code.
-- Hours sliders now 0–24 (step 1) with rate interpolation.
-- VA spouse logic: 'Veteran with spouse' ties to Person B; 'Two married veterans' applied once.
-- Label change in JSON: **Other savings & investments** (was 'Other liquid assets').
+- Fresh regeneration: reintroduced tooltips, 24h sliders, spouse VA logic.
+- Removed 'do they need care' prompt; Person A is assumed in-scope.
+- Home-mod calculator visible within Optional monthly costs.
+- Assets field renamed to 'Other savings & investments'.
