@@ -379,8 +379,9 @@ def main():
             inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
 
             if care.startswith("In-Home Care"):
-                hours = st.number_input("Hours of paid care per day", min_value=0, max_value=24, value=int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0)), step=1, key=f"hours_{tag_key}")
+                hours = st.slider("Hours of paid care per day", min_value=0, max_value=24, value=int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0)), step=1, key=f"hours_{tag_key}")
                 inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
+                st.caption("Tip: 2–4 hours/day is common for light help; increase for higher needs.")
             elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
                 room = st.selectbox("Room type", list(st.session_state.get("_room_types", []) or spec["lookups"]["room_type"].keys()), index=0, key=f"room_{tag_key}")
                 inp[f"room_type_person_{tag_key[-1]}"] = room
