@@ -2,13 +2,19 @@
 import json
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Optional
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-clean"
+APP_VERSION = "v2025-09-03-fixhours"
 st.sidebar.caption(f"App {APP_VERSION} · Streamlit {getattr(st, '__version__', 'unknown')}")
 
-# Safe rerun helper for any Streamlit version
+# Backward-compat: if old code calls st.experimental_rerun, alias it to st.rerun
+if not hasattr(st, "experimental_rerun") and hasattr(st, "rerun"):
+    def experimental_rerun():
+        return st.rerun()
+    st.experimental_rerun = experimental_rerun
+
+# Safe rerun helper
 def st_rerun():
     if hasattr(st, "rerun"):
         return st.rerun()
@@ -35,8 +41,6 @@ hr { border: 0; height: 1px; background: #e5e7eb; margin: .75rem 0; }
 </style>
 """
 
-# ---------------- Helpers -----------------
-
 def money(x) -> float:
     try:
         return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -56,14 +60,7 @@ def _read_json(path: str) -> Dict[str, Any]:
     except Exception:
         return {}
 
-# Merge base + overlay with richer controls
 def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    overlay.lookups -> extend/override
-    overlay.modules -> replace
-    overlay.ui_group_overrides -> replace_fields / append_fields / field_overrides
-    overlay.ui_group_additions -> add new groups
-    """
     spec = _read_json(base_path)
     if not spec:
         return {}
@@ -74,8 +71,6 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
             spec.setdefault("lookups", {}).update(overlay["lookups"])
         if overlay.get("modules"):
             spec["modules"] = overlay["modules"]
-
-        # Patch existing groups
         ov = overlay.get("ui_group_overrides", {})
         by_id = {g["id"]: g for g in spec.get("ui_groups", [])}
         for gid, patch in ov.items():
@@ -96,8 +91,6 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
                 this = field_ovs.get(f.get("label", f.get("field", "")), {})
                 for k, v in this.items():
                     f[k] = v
-
-        # Add brand new groups
         adds = overlay.get("ui_group_additions", [])
         if adds:
             ui_groups = spec.get("ui_groups", [])
@@ -106,10 +99,8 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
                 if g.get("id") not in existing:
                     ui_groups.append(g)
             spec["ui_groups"] = ui_groups
-
     return spec
 
-# Core math
 def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
     settings = spec.get("settings", {})
     lookups = spec.get("lookups", {})
@@ -166,14 +157,11 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
             return money(base_a - settings.get("second_person_cost", 1200))
         return 0.0
 
-    # Core costs
     care_cost = per_person_cost("a") + per_person_cost("b") - shared_unit_discount()
 
-    # Home carry (only if keeping the home)
     home_fields = ["mortgage","taxes","insurance","hoa","utilities"]
     home_sum = sum(inputs.get(k, 0.0) for k in home_fields) if inputs.get("maintain_home_household") else 0.0
 
-    # Optional monthly
     optional_fields = [
         "medicare_premiums","dental_vision_hearing","home_modifications_monthly","other_debts_monthly",
         "pet_care","entertainment_hobbies","optional_rx","optional_personal_care","optional_phone_internet",
@@ -182,13 +170,11 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
     ]
     optional_sum = sum(inputs.get(k, 0.0) for k in optional_fields)
 
-    # Benefits and LTC
     va_total = inputs.get("va_benefit_person_a", 0.0) + inputs.get("va_benefit_person_b", 0.0)
     ltc_add  = settings.get("ltc_monthly_add", 1800)
     ltc_total = (ltc_add if inputs.get("ltc_insurance_person_a") == "Yes" else 0) + \
                 (ltc_add if inputs.get("ltc_insurance_person_b") == "Yes" else 0)
 
-    # Other income injections
     hecm = inputs.get("hecm_draw_monthly", 0.0)
     heloc_draw = inputs.get("heloc_draw_monthly", 0.0)
     re_inv = inputs.get("re_investment_income", 0.0)
@@ -208,7 +194,6 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
     monthly_cost = care_cost + optional_sum + home_sum
 
-    # Assets
     total_assets = sum([
         inputs.get("home_equity", 0.0),
         inputs.get("other_assets", 0.0),
@@ -235,7 +220,6 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
         "years_funded_cap30": years,
     }
 
-# --------------- UI helpers ----------------
 def sidebar_summary(results: Dict[str, Any]):
     st.sidebar.title("Live Summary")
     st.sidebar.caption("Updates as you make changes.")
@@ -262,7 +246,7 @@ def sidebar_summary(results: Dict[str, Any]):
             try:
                 st.session_state.inputs = json.loads(up.getvalue().decode("utf-8"))
                 st.success("Loaded plan data.")
-                st_rerun()  # only place we force rerun
+                st_rerun()  # only here
             except Exception as e:
                 st.error(f"Could not load plan: {e}")
 
@@ -277,7 +261,6 @@ def progress_header(step: int):
             elif i == step: st.markdown(f"🟦 **{labels[i-1]}**")
             else: st.markdown(f"▫️ {labels[i-1]}")
 
-# --------------- App ----------------
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.markdown(THEME_CSS, unsafe_allow_html=True)
@@ -295,11 +278,10 @@ def main():
         st.stop()
 
     lookups = spec.get("lookups", {})
-
     step = st.session_state.step
     progress_header(step)
 
-    # ----- Step 1 -----
+    # Step 1
     if step == 1:
         c1, c2 = st.columns([2,1])
         with c1:
@@ -380,7 +362,7 @@ def main():
         if c1.button("Continue →", type="primary"):
             st.session_state.step = 2
 
-    # ----- Step 2 -----
+    # Step 2
     elif step == 2:
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
@@ -398,7 +380,7 @@ def main():
 
             if care.startswith("In-Home Care"):
                 hours = st.number_input("Hours of paid care per day", min_value=0, max_value=24, value=int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0)), step=1, key=f"hours_{tag_key}")
-                inp[f"hours_per_day_person_{tag_key[-1]}\"] = int(hours)
+                inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
             elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
                 room = st.selectbox("Room type", list(st.session_state.get("_room_types", []) or spec["lookups"]["room_type"].keys()), index=0, key=f"room_{tag_key}")
                 inp[f"room_type_person_{tag_key[-1]}"] = room
@@ -412,9 +394,7 @@ def main():
             cc = st.selectbox("Chronic conditions", list(spec["lookups"]["chronic_adders"].keys()), index=1, key=f"cc_{tag_key}")
             inp[f"chronic_person_{tag_key[-1]}"] = cc
 
-        # preload room types for predictable ordering
         st.session_state["_room_types"] = list(spec.get("lookups", {}).get("room_type", {}).keys())
-
         render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
         if st.session_state.include_b:
             st.divider()
@@ -427,14 +407,13 @@ def main():
         if c2.button("Continue to finances →", type="primary"):
             st.session_state.step = 3
 
-    # ----- Step 3 -----
+    # Step 3
     elif step == 3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income (not withdrawals) and asset balances. If something doesn’t apply, leave it at 0.")
         inp = st.session_state.inputs
-        groups = {g["id"]: g for g in spec.get("ui_groups", [])}
+        spec_groups = {g["id"]: g for g in spec.get("ui_groups", [])}
 
-        # Home hints
         if inp.get("home_to_assets"):
             st.info("Home plan: **Sell the home** — Net proceeds auto-populate in Assets.")
         elif inp.get("expect_hecm"):
@@ -445,7 +424,7 @@ def main():
             st.info("Home plan: **Keep living in the home** — Mortgage/taxes/insurance/utilities will be included.")
 
         def render_group(gid: str, rename: Optional[Dict[str,str]] = None):
-            g = groups[gid]
+            g = spec_groups[gid]
             label = g["label"]
             if rename:
                 label = label.replace("Person A", rename.get("A","Person A")).replace("Person B", rename.get("B","Person B"))
@@ -457,7 +436,7 @@ def main():
                     fld_label = f.get("label", f["field"])
                     kind = f.get("kind", "currency")
                     default = f.get("default", 0)
-                    help_txt = f.get("tooltip", None)
+                    help_txt = f.get("tooltip")
                     key = f.get("field")
                     if kind == "currency":
                         v = st.number_input(fld_label, min_value=0.0, value=float(inp.get(key, default)), step=50.0, format="%.2f", help=help_txt)
@@ -477,7 +456,7 @@ def main():
         grouped_answers = {}
         for mod in mod_order:
             for gid in module_to_groups.get(mod, []):
-                if gid in groups:
+                if gid in spec_groups:
                     ans = render_group(gid, rename=name_map)
                     if ans is not None:
                         grouped_answers[gid] = ans
@@ -490,7 +469,7 @@ def main():
         if c2.button("Calculate →", type="primary"):
             st.session_state.step = 4
 
-    # ----- Step 4 -----
+    # Step 4
     else:
         st.header("Step 4 · Results")
         results = compute_results(st.session_state.inputs, spec)
