@@ -1,11 +1,11 @@
 
-# streamlit_app.py — fixed: unique keys, sidebar summary, home-sale net proceeds
+# streamlit_app.py — rb5: fix Step 2 option reset, keep Stay-at-Home, restore VA drawer and Assets split
 import json
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-rb4"
+APP_VERSION = "v2025-09-03-rb5"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -25,16 +25,6 @@ def load_spec():
     ov = read_json(OVERLAY_PATH)
     if ov:
         spec.setdefault("lookups", {}).update(ov.get("lookups", {}))
-        gid = {g["id"]: g for g in spec.get("ui_groups", [])}
-        for k,patch in ov.get("ui_group_overrides", {}).items():
-            if k in gid:
-                g = gid[k]
-                if "module" in patch: g["module"]=patch["module"]
-                if "label" in patch: g["label"]=patch["label"]
-                if "replace_fields" in patch: g["fields"]=list(patch["replace_fields"])
-        for add in ov.get("ui_group_additions", []):
-            if add["id"] not in {g["id"] for g in spec.get("ui_groups", [])}:
-                spec.setdefault("ui_groups", []).append(add)
     spec.setdefault("lookups", {})
     spec["lookups"].setdefault("state_multipliers", {"National":1.0})
     spec["lookups"].setdefault("room_type", {"Studio":3500, "1 Bedroom":4200, "Shared":3000})
@@ -122,6 +112,10 @@ def compute(inputs, spec):
     elif "Veteran" in catB or "spouse" in catB: va_b=va_month; va_a=0.0
     else: va_a=0.0; va_b=0.0
 
+    # Allow manual override if user provided it
+    if inputs.get("va_override_a_on"): va_a = money(inputs.get("va_override_a_val",0.0))
+    if inputs.get("va_override_b_on"): va_b = money(inputs.get("va_override_b_val",0.0))
+
     income = money(hh + va_a + va_b + float(inputs.get("hecm_draw",0.0)) + float(inputs.get("heloc_draw",0.0)))
     gap = money(month_cost - income)
     return {"care":care,"home":home,"opt":opt,"month_cost":month_cost,"income":income,"gap":gap,"va_a":va_a,"va_b":va_b}
@@ -130,7 +124,7 @@ def sidebar_summary():
     st.sidebar.title("Live Summary")
     st.sidebar.caption("Updates as you type.")
     spec=load_spec(); res=compute(st.session_state.inputs, spec) if "inputs" in st.session_state else {}
-    if not res: 
+    if not res:
         st.sidebar.info("Fill in the steps to see totals."); 
         return
     st.sidebar.metric("Total monthly cost", mfmt(res["month_cost"]))
@@ -200,7 +194,7 @@ def main():
         inp["expect_hecm"]= ("HECM" in plan)
         inp["expect_heloc"]= ("HELOC" in plan)
 
-        # Re-added: net proceeds if selling
+        # Net proceeds if selling
         if inp["home_to_assets"]:
             st.subheader("Home sale estimate")
             c1,c2,c3 = st.columns(3)
@@ -221,12 +215,21 @@ def main():
         names=st.session_state.get("names",{"A":"Person A","B":"Person B"})
         include_b=st.session_state.get("include_b", False)
 
-        def person(tag, display, default_stay=False):
-            opts=["In-Home Care (professional staff such as nurses, CNAs, or aides)","Assisted Living (or Adult Family Home)","Memory Care"]
-            if default_stay: opts=["Stay at Home (no paid care)"]+opts
-            def_idx = 0 if default_stay else opts.index("In-Home Care (professional staff such as nurses, CNAs, or aides)")
-            ct=st.selectbox(f"Care type for {display}", opts, index=def_idx, key=f"ct_{tag}",
-                            help="In‑home uses hourly estimates; Assisted Living/Memory Care use monthly room + adders.")
+        # Always include Stay at Home in choices. Preselect for B when audience implies.
+        ALL_CT = ["Stay at Home (no paid care)",
+                  "In-Home Care (professional staff such as nurses, CNAs, or aides)",
+                  "Assisted Living (or Adult Family Home)",
+                  "Memory Care"]
+
+        def ensure_default(tag, want_default_stay):
+            key = f"ct_{tag}"
+            if key not in st.session_state:
+                st.session_state[key] = "Stay at Home (no paid care)" if want_default_stay else "In-Home Care (professional staff such as nurses, CNAs, or aides)"
+                st.session_state.inputs[f"care_type_{tag}"] = st.session_state[key]
+
+        def person(tag, display, want_default_stay=False):
+            ensure_default(tag, want_default_stay)
+            ct = st.selectbox(f"Care type for {display}", ALL_CT, key=f"ct_{tag}")
             inp[f"care_type_{tag}"]=ct
             if ct.startswith("In-Home"):
                 hrs=st.slider("Hours of paid care per day (0–24)", 0, 24, int(inp.get(f"hours_{tag}",4) or 4), 1, key=f"hrs_{tag}",
@@ -247,11 +250,11 @@ def main():
                 cc=st.selectbox("Chronic conditions", ["None (no chronic conditions)","Some (one or two managed)","Multiple/Complex (multiple or complex care)"], index=0, key=f"cc_{tag}")
                 inp[f"chronic_{tag}"]=cc.split(" (")[0]
 
-        person("a", names.get("A","Person A"), default_stay=False)
+        person("a", names.get("A","Person A"), want_default_stay=False)
         if include_b:
             st.subheader("Spouse / Partner / Second Parent")
-            default_stay = st.session_state.get("who") in ["I'm planning for my spouse/partner","I'm planning for my parent/parent-in-law"]
-            person("b", names.get("B","Person B"), default_stay=default_stay)
+            want_default_stay = st.session_state.get("who") in ["I'm planning for my spouse/partner","I'm planning for my parent/parent-in-law"]
+            person("b", names.get("B","Person B"), want_default_stay=want_default_stay)
 
         c1,c2 = st.columns(2)
         if c1.button("← Back", key="back_to_step1"): st.session_state.step=1; st.rerun()
@@ -260,7 +263,6 @@ def main():
     elif step==3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. The summary updates live.")
-        # Give each input a unique key to avoid DuplicateElementId
         names=st.session_state.get("names",{"A":"Person A","B":"Person B"})
         with st.expander(f"Income — {names.get('A','Person A')}", expanded=False):
             inp["ss_a"]=st.number_input("Social Security (monthly)", min_value=0.0, value=float(inp.get("ss_a",0.0)), step=50.0, key="ss_a_key")
@@ -278,16 +280,37 @@ def main():
         with st.expander("Benefits — VA Aid & Attendance", expanded=False):
             cats=list(spec["lookups"]["va_categories"].keys())
             def catdisplay(c): return f"{c} ({mfmt(spec['lookups']['va_categories'][c])})"
-            inp["va_cat_a"]= st.selectbox(f"VA category — {names.get('A','Person A')}", [catdisplay(c) for c in cats], index=0, key="va_cat_a_key").split(" (")[0]
+            col1,col2 = st.columns(2)
+            with col1:
+                sel_a = st.selectbox(f"VA category — {names.get('A','Person A')}", [catdisplay(c) for c in cats], index=0, key="va_cat_a_key")
+                inp["va_cat_a"]= sel_a.split(" (")[0]
             if st.session_state.get("include_b", False):
-                inp["va_cat_b"]= st.selectbox(f"VA category — {names.get('B','Person B')}", [catdisplay(c) for c in cats], index=0, key="va_cat_b_key").split(" (")[0]
-            st.caption("We compute VA benefit automatically based on MAPR, your countable income, and medical deductions.")
+                with col2:
+                    sel_b = st.selectbox(f"VA category — {names.get('B','Person B')}", [catdisplay(c) for c in cats], index=0, key="va_cat_b_key")
+                    inp["va_cat_b"]= sel_b.split(" (")[0]
+            st.caption("Short version: the VA category dropdown picks the ceiling (MAPR). The VA benefit (auto) is the actual computed award. You can override if you have an award letter.")
+            res_preview = compute(inp, spec)
+            st.text_input(f"VA benefit — {names.get('A','Person A')} (auto)", value=mfmt(res_preview['va_a']), disabled=True, key="va_auto_a_disp")
+            if st.checkbox(f"Override amount manually — {names.get('A','Person A')}", value=bool(inp.get('va_override_a_on', False)), key="va_override_a_on"):
+                inp["va_override_a_on"]=True
+                inp["va_override_a_val"]=st.number_input("VA amount override (monthly)", min_value=0.0, value=float(inp.get("va_override_a_val",0.0)), step=25.0, key="va_override_a_val_key")
+            else:
+                inp["va_override_a_on"]=False
+            if st.session_state.get("include_b", False):
+                st.text_input(f"VA benefit — {names.get('B','Person B')} (auto)", value=mfmt(res_preview['va_b']), disabled=True, key="va_auto_b_disp")
+                if st.checkbox(f"Override amount manually — {names.get('B','Person B')}", value=bool(inp.get('va_override_b_on', False)), key="va_override_b_on"):
+                    inp["va_override_b_on"]=True
+                    inp["va_override_b_val"]=st.number_input("VA amount override (monthly)", min_value=0.0, value=float(inp.get("va_override_b_val",0.0)), step=25.0, key="va_override_b_val_key")
+                else:
+                    inp["va_override_b_on"]=False
         with st.expander("Other monthly costs (optional)", expanded=False):
             inp["medicare"]=st.number_input("Medicare premiums", 0.0, value=float(inp.get("medicare",0.0)), step=25.0, key="medicare_key")
             inp["dvh"]=st.number_input("Dental / vision / hearing", 0.0, value=float(inp.get("dvh",0.0)), step=25.0, key="dvh_key")
             inp["rx"]=st.number_input("Prescriptions (optional)", 0.0, value=float(inp.get("rx",0.0)), step=25.0, key="rx_key")
             inp["personal"]=st.number_input("Personal care (optional)", 0.0, value=float(inp.get("personal",0.0)), step=25.0, key="personal_key")
             inp["other_monthly"]=st.number_input("Other monthly costs", 0.0, value=float(inp.get("other_monthly",0.0)), step=25.0, key="other_monthly_key")
+
+        # Assets split into two drawers
         with st.expander("Assets — Common balances", expanded=False):
             inp["cash_savings"]=st.number_input("Cash and savings", 0.0, value=float(inp.get("cash_savings",0.0)), step=100.0, key="cash_savings_key")
             inp["brokerage_taxable"]=st.number_input("Brokerage (taxable) total", 0.0, value=float(inp.get("brokerage_taxable",0.0)), step=100.0, key="brokerage_taxable_key")
@@ -297,6 +320,15 @@ def main():
             inp["employer_401k"]=st.number_input("401(k) balance", 0.0, value=float(inp.get("employer_401k",0.0)), step=100.0, key="employer_401k_key")
             inp["home_equity"]=st.number_input("Home equity", 0.0, value=float(inp.get("home_equity",0.0)), step=100.0, key="home_equity_key")
             inp["annuity_surrender"]=st.number_input("Annuities (surrender value)", 0.0, value=float(inp.get("annuity_surrender",0.0)), step=100.0, key="annuity_surrender_key")
+        with st.expander("More asset types (optional)", expanded=False):
+            inp["cds_balance"]=st.number_input("Certificates of deposit (CDs)", 0.0, value=float(inp.get("cds_balance",0.0)), step=100.0, key="cds_balance_key")
+            inp["employer_403b"]=st.number_input("403(b) balance", 0.0, value=float(inp.get("employer_403b",0.0)), step=100.0, key="employer_403b_key")
+            inp["employer_457b"]=st.number_input("457(b) balance", 0.0, value=float(inp.get("employer_457b",0.0)), step=100.0, key="employer_457b_key")
+            inp["ira_sep"]=st.number_input("SEP IRA balance", 0.0, value=float(inp.get("ira_sep",0.0)), step=100.0, key="ira_sep_key")
+            inp["ira_simple"]=st.number_input("SIMPLE IRA balance", 0.0, value=float(inp.get("ira_simple",0.0)), step=100.0, key="ira_simple_key")
+            inp["life_cash_value"]=st.number_input("Life insurance cash value", 0.0, value=float(inp.get("life_cash_value",0.0)), step=100.0, key="life_cash_value_key")
+            inp["hsa_balance"]=st.number_input("HSA balance", 0.0, value=float(inp.get("hsa_balance",0.0)), step=100.0, key="hsa_balance_key")
+            inp["other_assets"]=st.number_input("Other assets (catch‑all)", 0.0, value=float(inp.get("other_assets",0.0)), step=100.0, key="other_assets_key")
 
         c1,c2 = st.columns(2)
         if c1.button("← Back", key="back_to_step2"): st.session_state.step=2; st.rerun()
