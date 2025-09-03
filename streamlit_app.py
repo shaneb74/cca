@@ -1,7 +1,6 @@
 # streamlit_app.py
-# Senior Care Cost Planner – demo-ready with reactive Step 1 (no form)
-# Requires: streamlit (see requirements_streamlit.txt)
-# Expects these files in the same folder:
+# Senior Care Cost Planner – demo-ready with reactive Step 1 and Step 2
+# Files expected next to this file:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
 #   - senior_care_modular_overlay.json
 
@@ -11,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix-reactive-step1"
+APP_VERSION = "v2025-09-03-demofix-reactive-step1-2"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -81,7 +80,7 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
 
     return spec
 
-# -------------------------- core calculations -----------------------------
+# -------------------------- calculations ----------------------------------
 def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
     settings = spec.get("settings", {})
     lookups = spec.get("lookups", {})
@@ -176,9 +175,9 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
     ltc_total = 0.0
     if str(inputs.get("ltc_insurance_person_a", "No")).lower() in {"yes","true","1"}:
-        ltc_total += ltc_monthly_add
+        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
     if str(inputs.get("ltc_insurance_person_b", "No")).lower() in {"yes","true","1"}:
-        ltc_total += ltc_monthly_add
+        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
 
     hecm = float(inputs.get("hecm_draw_monthly", 0.0))
     heloc_draw = float(inputs.get("heloc_draw_monthly", 0.0))
@@ -308,7 +307,7 @@ def main():
     step = st.session_state.step
     progress_header(step)
 
-    # ---------------- Step 1 (reactive, no form so the radio updates instantly)
+    # ---------------- Step 1 (reactive)
     if step == 1:
         c1, c2 = st.columns([2,1])
         with c1:
@@ -321,12 +320,9 @@ def main():
                 "I'm planning for a relative or POA",
                 "I'm planning for a friend or someone else"
             ]
-            if "who_idx" not in st.session_state:
-                st.session_state.who_idx = 0
-            who = st.radio("Select the situation", options, index=st.session_state.who_idx, key="who_choice")
+            who = st.radio("Select the situation", options, index=st.session_state.get("who_idx", 0), key="who_choice")
             st.session_state.who_idx = options.index(who)
 
-            # Exact audiencing behavior
             if who == "I'm planning for myself":
                 cols = st.columns(2)
                 with cols[0]:
@@ -373,7 +369,7 @@ def main():
                 st.session_state.include_b = include_spouse and bool((b_name or "").strip())
                 st.session_state.name_hint = {"A": a_name or "Person A", "B": (b_name or "Partner") if st.session_state.include_b else "Partner"}
 
-            # Location select
+            # Location
             states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
             states = (["National"] if "National" in states else []) + sorted([s for s in states if s != "National"])
             s_idx = states.index("National") if "National" in states else 0
@@ -410,12 +406,11 @@ def main():
         with c2:
             st.info("Tip: Save or load a plan from the sidebar at any time.")
 
-        # Plain button to advance; widgets above are reactive without submit
         if st.button("Continue →", type="primary", key="btn_step1_continue"):
             st.session_state.step = 2
             st.rerun()
 
-    # ---------------- Step 2 (use form to stabilize multi-widget submit)
+    # ---------------- Step 2 (reactive, no form so the dropdown swaps widgets immediately)
     elif step == 2:
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
@@ -435,70 +430,72 @@ def main():
                 return [c for c in base if not c.startswith("Stay")]
             return base
 
-        with st.form("form_step2", clear_on_submit=False):
-            def render_person(tag_key: str, display_name: str):
-                choices = care_options_for(tag_key)
-                default_idx = 0
-                for i, c in enumerate(choices):
-                    if c.startswith("In-Home Care"):
-                        default_idx = i
-                        break
+        def render_person(tag_key: str, display_name: str):
+            choices = care_options_for(tag_key)
 
-                care = st.selectbox(f"Care type for {display_name}", choices, index=default_idx, key=f"care_type_{tag_key}")
-                inp[f"care_type_person_{tag_key[-1]}"] = care
-                inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
+            # Default to In-Home Care if available
+            default_idx = 0
+            for i, c in enumerate(choices):
+                if c.startswith("In-Home Care"):
+                    default_idx = i
+                    break
 
-                hours_ph = st.empty()
-                days_ph = st.empty()
+            care = st.selectbox(f"Care type for {display_name}", choices, index=default_idx, key=f"care_type_{tag_key}")
+            inp[f"care_type_person_{tag_key[-1]}"] = care
+            inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
 
-                if care.startswith("In-Home Care"):
-                    hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0) or 0)
-                    hours_val = max(0, min(24, hours_val))
-                    with hours_ph:
-                        hours = st.slider("Hours of paid care per day (0-24)", min_value=0, max_value=24, value=hours_val, step=1, key=f"hours_slider_{tag_key}")
-                    inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
+            # dynamic region
+            if care.startswith("In-Home Care"):
+                hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0) or 0)
+                hours_val = max(0, min(24, hours_val))
+                hours = st.slider("Hours of paid care per day (0-24)",
+                                  min_value=0, max_value=24, value=hours_val, step=1,
+                                  key=f"hours_slider_{tag_key}")
+                inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
 
-                    default_days = int(spec.get("settings", {}).get("days_per_month", 30))
-                    days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", default_days) or default_days)
-                    days_val = max(0, min(31, days_val))
-                    with days_ph:
-                        days = st.slider("Days of paid care per month (0-31)", min_value=0, max_value=31, value=days_val, step=1, key=f"days_slider_{tag_key}")
-                    inp[f"days_per_month_person_{tag_key[-1]}"] = int(days)
+                default_days = int(spec.get("settings", {}).get("days_per_month", 30))
+                days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", default_days) or default_days)
+                days_val = max(0, min(31, days_val))
+                days = st.slider("Days of paid care per month (0-31)",
+                                 min_value=0, max_value=31, value=days_val, step=1,
+                                 key=f"days_slider_{tag_key}")
+                inp[f"days_per_month_person_{tag_key[-1]}"] = int(days)
 
-                    st.caption("Tip: many families start with 2–4 hours/day around 20 days/month.")
+                st.caption("Tip: many families start with 2–4 hours/day around 20 days/month.")
 
-                elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
-                    room_types = list(spec.get("lookups", {}).get("room_type", {}).keys()) or ["Studio", "1 Bedroom", "Shared"]
-                    room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}")
-                    inp[f"room_type_person_{tag_key[-1]}"] = room
+            elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
+                room_types = list(spec.get("lookups", {}).get("room_type", {}).keys()) or ["Studio", "1 Bedroom", "Shared"]
+                room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}")
+                inp[f"room_type_person_{tag_key[-1]}"] = room
 
-                level = st.selectbox("Care level", ["Low", "Medium", "High"], index=1, key=f"level_{tag_key}")
-                inp[f"care_level_person_{tag_key[-1]}"] = level
+            # common selectors
+            level = st.selectbox("Care level", ["Low", "Medium", "High"], index=1, key=f"level_{tag_key}")
+            inp[f"care_level_person_{tag_key[-1]}"] = level
 
-                mob_keys = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
-                mob = st.selectbox("Mobility", mob_keys, index=min(1, len(mob_keys)-1), key=f"mob_{tag_key}")
-                inp[f"mobility_person_{tag_key[-1]}"] = mob
+            mob_keys = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
+            mob = st.selectbox("Mobility", mob_keys, index=min(1, len(mob_keys)-1), key=f"mob_{tag_key}")
+            inp[f"mobility_person_{tag_key[-1]}"] = mob
 
-                cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
-                cc_default = 0 if "None" in cc_keys else 1
-                cc = st.selectbox("Chronic conditions", cc_keys, index=min(cc_default, len(cc_keys)-1), key=f"cc_{tag_key}")
-                inp[f"chronic_person_{tag_key[-1]}"] = cc
+            cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
+            cc_default = 0 if "None" in cc_keys else 1
+            cc = st.selectbox("Chronic conditions", cc_keys, index=min(cc_default, len(cc_keys)-1), key=f"cc_{tag_key}")
+            inp[f"chronic_person_{tag_key[-1]}"] = cc
 
-            render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
-            if st.session_state.include_b:
-                st.divider()
-                st.subheader("Spouse / Partner / Second Parent")
-                render_person("person_b", st.session_state.name_hint.get("B", "Person B"))
+        render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
+        if st.session_state.include_b:
+            st.divider()
+            st.subheader("Spouse / Partner / Second Parent")
+            render_person("person_b", st.session_state.name_hint.get("B", "Person B"))
 
-            c1, c2 = st.columns(2)
-            if c1.form_submit_button("← Back"):
-                st.session_state.step = 1
-                st.rerun()
-            if c2.form_submit_button("Continue to finances →", type="primary"):
-                st.session_state.step = 3
-                st.rerun()
+        c1, c2 = st.columns(2)
+        if c1.button("← Back", key="btn_step2_back"):
+            st.session_state.step = 1
+            st.rerun()
+        if c2.button("Continue to finances →", type="primary", key="btn_step2_next"):
+            st.session_state.step = 3
+            st.rerun()
 
-    # ---------------- Step 3 (unchanged)
+    # ---------------- Step 3
     elif step == 3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. If something doesn’t apply, leave it at 0.")
@@ -515,6 +512,9 @@ def main():
         else:
             st.info("Home plan: Keep living in the home — mortgage/taxes/insurance/utilities are included below.")
 
+        def _rename(text: str, mapping: Dict[str, str]) -> str:
+            return text.replace("Person A", mapping.get("A", "Person A")).replace("Person B", mapping.get("B", "Person B"))
+
         def render_group(gid: str, rename: Optional[Dict[str,str]] = None) -> Dict[str, Any]:
             g = spec_groups.get(gid)
             if not g:
@@ -525,7 +525,8 @@ def main():
             label = g.get("label", gid)
             prompt = g.get("prompt", "")
             if rename:
-                label = label.replace("Person A", rename.get("A","Person A")).replace("Person B", rename.get("B","Person B"))
+                label = _rename(label, rename)
+                prompt = _rename(prompt or "", rename)
 
             expanded = gid.startswith("group_income") or gid.startswith("group_benefits")
             with st.expander(f"{label} — {prompt}", expanded=expanded):
@@ -538,24 +539,27 @@ def main():
                         continue
 
                     fld_label = f.get("label", key)
+                    if rename:
+                        fld_label = _rename(fld_label, rename)
+
                     kind = f.get("kind", "currency")
                     default = f.get("default", 0)
                     help_txt = f.get("tooltip")
 
                     if kind == "currency":
-                        v = st.number_input(fld_label, min_value=0.0, value=float(inp.get(key, default)), step=50.0, format="%.2f", help=help_txt)
+                        v = st.number_input(fld_label, min_value=0.0, value=float(inp.get(key, default)), step=50.0, format="%.2f", help=help_txt, key=f"cur_{key}")
                     elif kind == "boolean":
                         v_bool = str(inp.get(key, default)).lower() in {"yes","true","1"}
-                        v = st.checkbox(fld_label, value=v_bool, help=help_txt)
+                        v = st.checkbox(fld_label, value=v_bool, help=help_txt, key=f"bool_{key}")
                         v = "Yes" if v else "No"
                     elif kind == "select":
                         opts = f.get("options", [])
                         idx = 0
                         if isinstance(default, str) and default in opts:
                             idx = opts.index(default)
-                        v = st.selectbox(fld_label, opts, index=idx if idx < len(opts) else 0, help=help_txt)
+                        v = st.selectbox(fld_label, opts, index=idx if idx < len(opts) else 0, help=help_txt, key=f"sel_{key}")
                     else:
-                        v = st.text_input(fld_label, value=str(inp.get(key, default)), help=help_txt)
+                        v = st.text_input(fld_label, value=str(inp.get(key, default)), help=help_txt, key=f"txt_{key}")
                     answers[key] = v
                 return answers
 
