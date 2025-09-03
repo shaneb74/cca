@@ -1,10 +1,7 @@
 # CHANGELOG
 
 ## vNext
-- Progress bar + step pills at top of app (Step 1–4).
-- Reinforced spouse/partner household income capture.
-- VA A&A tier selector shows immediate impact preview.
-- Home strategy unifies downstream UI (carry costs vs. sale proceeds vs. HECM/HELOC).
-- Terminology pass: “Stay at Home (no paid care)” vs “In‑Home Care”.
-
-- Renamed **Other liquid assets** to **Other savings & investments** in JSON spec for consistency with UI.
+- FIX: Indentation error removed in assets label remap code.
+- Hours sliders now 0–24 (step 1) with rate interpolation.
+- VA spouse logic: 'Veteran with spouse' ties to Person B; 'Two married veterans' applied once.
+- Label change in JSON: **Other savings & investments** (was 'Other liquid assets').
