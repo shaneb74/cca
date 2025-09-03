@@ -236,6 +236,28 @@ groups     = {g["id"]: g for g in groups_cfg}
 lookups    = spec.get("lookups", {})
 modules    = spec.get("modules", [])
 
+# --- UI help text / tooltips ---
+HELP_HOURS = "Choose average paid caregiver hours per day (e.g., 4–24). This is professional in‑home care time."
+HELP_LEVEL = "Level of assistance with Activities of Daily Living (ADLs). Low = independent/minimal help; Medium = some ADLs; High = extensive ADL or cognitive support."
+HELP_MOBILITY = "Mobility aids often change staff time/cost: None, Walker, or Wheelchair."
+HELP_CHRONIC = "Chronic/complex conditions may increase care needs: manageable vs. complex multi‑condition care."
+HELP_VA_ELIG = "Check if they qualify for VA Aid & Attendance. If not sure, you can still preview tiers below."
+HELP_VA_TIER = "Select the official VA Aid & Attendance designation. Amount is auto‑filled; only applied if eligibility is checked."
+HELP_HOME_EQUITY = "If you plan to sell, enter net proceeds in Assets. If keeping the home, equity is typically not liquid unless using HELOC/HECM."
+HELP_HOME_MODS = "Monthly‑ize one‑time accessibility improvements (e.g., ramps, grab bars, stair lift) over a reasonable timeframe."
+
+# Care level display mapping with context
+CARE_LEVEL_DISPLAY = [
+    ("Low", "Low (independent or minimal ADL help)"),
+    ("Medium", "Medium (help with some ADLs)"),
+    ("High", "High (extensive ADL/cognitive support)"),
+]
+def _level_label_to_key(label):
+    for key, disp in CARE_LEVEL_DISPLAY:
+        if label == disp:
+            return key
+    return label
+
 # Wizard session state
 if "step" not in st.session_state: st.session_state.step = 1
 if "inputs" not in st.session_state: st.session_state.inputs = {}
@@ -331,19 +353,19 @@ elif st.session_state.step == 2:
         inputs[f"care_type_person_{person_key[-1]}"] = care_type
 
         if care_type.startswith("In-Home Care"):
-            st.selectbox("Hours of care per day", ["4","6","8","10","12","24"], index=2, key=f"hours_{person_key}")
+            st.select_slider("Hours of care per day", options=["4","6","8","10","12","24"], value="8", key=f"hours_{person_key}", help=HELP_HOURS)
             inputs[f"hours_per_day_person_{person_key[-1]}"] = st.session_state[f"hours_{person_key}"]
         else:
-            st.selectbox("Room type", list(spec["lookups"]["room_type"].keys()), index=0, key=f"room_{person_key}")
+            st.selectbox("Room type", list(spec["lookups"]["room_type"].keys()), index=0, key=f"room_{person_key}", help="Studio = lowest cost; 1BR = standard; 2BR = largest. Actual costs vary by facility.")
             inputs[f"room_type_person_{person_key[-1]}"] = st.session_state[f"room_{person_key}"]
 
-        st.selectbox("Care level", list(spec["lookups"]["care_level_adders"].keys()), index=1, key=f"level_{person_key}")
-        inputs[f"care_level_person_{person_key[-1]}"] = st.session_state[f"level_{person_key}"]
+        level_disp = st.selectbox("Care level", [d for _, d in CARE_LEVEL_DISPLAY], index=1, key=f"level_{person_key}", help=HELP_LEVEL)
+        inputs[f"care_level_person_{person_key[-1]}"] = _level_label_to_key(level_disp)
 
-        st.selectbox("Mobility", list(spec["lookups"]["mobility_adders"]["facility"].keys()), index=1, key=f"mob_{person_key}")
+        st.selectbox("Mobility", list(spec["lookups"]["mobility_adders"]["facility"].keys()), index=1, key=f"mob_{person_key}", help=HELP_MOBILITY)
         inputs[f"mobility_person_{person_key[-1]}"] = st.session_state[f"mob_{person_key}"]
 
-        st.selectbox("Chronic conditions", list(spec["lookups"]["chronic_adders"].keys()), index=1, key=f"cc_{person_key}")
+        st.selectbox("Chronic conditions", list(spec["lookups"]["chronic_adders"].keys()), index=1, key=f"cc_{person_key}", help=HELP_CHRONIC)
         inputs[f"chronic_person_{person_key[-1]}"] = st.session_state[f"cc_{person_key}"]
 
     # Person A is always in care for this wizard (the main care recipient)
@@ -374,24 +396,26 @@ elif st.session_state.step == 2:
             inputs["mobility_person_b"]   = inputs["mobility_person_a"]
             inputs["chronic_person_b"]    = inputs["chronic_person_a"]
         elif b_has_paid:
-            st.selectbox("Care level (B)", list(spec["lookups"]["care_level_adders"].keys()), index=0, key="level_person_b")
-            inputs["care_level_person_b"] = st.session_state["level_person_b"]
-            st.selectbox("Mobility (B)", list(spec["lookups"]["mobility_adders"]["facility"].keys()), index=0, key="mob_person_b")
+            level_disp_b = st.selectbox("Care level (B)", [d for _, d in CARE_LEVEL_DISPLAY], index=0, key="level_person_b", help=HELP_LEVEL)
+            inputs["care_level_person_b"] = _level_label_to_key(level_disp_b)
+            st.selectbox("Mobility (B)", list(spec["lookups"]["mobility_adders"]["facility"].keys()), index=0, key="mob_person_b", help=HELP_MOBILITY)
             inputs["mobility_person_b"] = st.session_state["mob_person_b"]
-            st.selectbox("Chronic conditions (B)", list(spec["lookups"]["chronic_adders"].keys()), index=0, key="cc_person_b")
+            st.selectbox("Chronic conditions (B)", list(spec["lookups"]["chronic_adders"].keys()), index=0, key="cc_person_b", help=HELP_CHRONIC)
             inputs["chronic_person_b"] = st.session_state["cc_person_b"]
 
         if care_b.startswith("In-Home Care"):
-            st.selectbox("Hours/day (B)", ["4","6","8","10","12","24"], index=1, key="hours_person_b")
+            st.select_slider("Hours/day (B)", options=["4","6","8","10","12","24"], value="6", key="hours_person_b", help=HELP_HOURS)
             inputs["hours_per_day_person_b"] = st.session_state["hours_person_b"]
         elif care_b in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
-            st.selectbox("Room type (B)", list(spec["lookups"]["room_type"].keys()), index=0, key="room_person_b")
+            st.selectbox("Room type (B)", list(spec["lookups"]["room_type"].keys()), index=0, key="room_person_b", help="Studio = lowest cost; 1BR = standard; 2BR = largest. Actual costs vary by facility.")
             inputs["room_type_person_b"] = st.session_state["room_person_b"]
 
         # If both are in facility settings, allow shared unit discount
         facility_types = ["Assisted Living (or Adult Family Home)", "Memory Care"]
         if (inputs["care_type_person_a"] in facility_types) and (care_b in facility_types):
             inputs["share_one_unit"] = st.checkbox("Share one unit?", value=False)
+            if inputs["share_one_unit"]:
+                st.caption("When both are in a facility, couples can sometimes share one unit; this reduces costs for the second person.")
 
     # Nav
     c1, c2 = st.columns(2)
@@ -447,16 +471,17 @@ elif st.session_state.step == 3:
         with st.expander(f"{g['label'].replace('Person A', person_label).replace('Person B', person_label)} — {g.get('prompt','')}", expanded=False):
             ans = {}
             # VA selector is always shown, disabled until eligible is checked (so users can see tiers)
-            eligible = st.checkbox(f"{person_label}: Qualifies for VA Aid & Attendance?", value=False, key=f"va_elig_{gid}")
+            eligible = st.checkbox(f"{person_label}: Qualifies for VA Aid & Attendance?", value=False, key=f"va_elig_{gid}", help=HELP_VA_ELIG)
+            st.caption("VA Aid & Attendance is a **tax-free monthly benefit** for wartime veterans and their spouses to help cover care costs.")
             va_tiers = spec.get("lookups", {}).get("va_tiers", [])
-            choice = st.selectbox(f"{person_label}: VA designation", [t["label"] for t in va_tiers] or ["Not applicable"],
-                                  key=f"va_tier_{gid}", disabled=not eligible)
+            choice = st.selectbox(f"{person_label}: VA designation", [t["label"] for t in va_tiers] or ["Not applicable"], key=f"va_tier_{gid}", help=HELP_VA_TIER)
             monthly = 0.0
-            if eligible:
-                for t in va_tiers:
-                    if t["label"] == choice:
-                        monthly = float(t.get("monthly", 0.0))
-                        break
+            for t in va_tiers:
+                if t["label"] == choice:
+                    monthly = float(t.get("monthly", 0.0))
+                    break
+            if not eligible:
+                monthly = 0.0
             st.number_input(f"{person_label}: VA benefit (auto)", min_value=0.0, value=float(monthly), step=50.0, format="%.2f",
                             key=f"va_amt_{gid}", disabled=True)
             if eligible and monthly:
@@ -506,17 +531,45 @@ elif st.session_state.step == 3:
                 label = f.get("label", f["field"])
                 kind = f.get("kind", "currency")
                 default = f.get("default", 0)
+                help_txt = None
                 # hide direct Home equity input if keeping home or using sale auto-proceeds
                 if gid == "group_assets" and "Home equity" in label and (keep_home or inputs.get("home_to_assets")):
                     continue
+                # contextual help by label
+                if gid == "group_home_carry":
+                    if "Mortgage" in label: help_txt = "Principal & interest portion of your monthly mortgage payment."
+                    if "Property taxes" in label: help_txt = "Average monthly amount for property taxes."
+                    if "Home insurance" in label: help_txt = "Homeowner’s/hazard insurance premium monthlyized."
+                    if "HOA" in label: help_txt = "Monthly HOA dues, if applicable."
+                    if "Utilities" in label: help_txt = "Power, water, sewer, trash, gas (estimated monthly total)."
+                if gid == "group_optional_costs":
+                    if "Home modifications" in label:
+                        help_txt = HELP_HOME_MODS
+                        with st.expander("Calculate a monthly amount from a one‑time project (optional)", expanded=False):
+                            one_time = st.number_input("One‑time modification cost ($)", min_value=0.0, value=float(st.session_state.get("hm_one_time", 0.0)), step=100.0, format="%.2f", key="hm_one_time")
+                            months = st.number_input("Spread over (months)", min_value=1, value=int(st.session_state.get("hm_months", 24)), step=1, key="hm_months")
+                            monthly_est = one_time / max(1, months)
+                            st.caption(f"Estimated monthly: **${monthly_est:,.2f}** (one‑time ÷ months)")
+                            st.session_state["home_mod_calc_monthly"] = monthly_est
+                        # use calculator result as default if > 0
+                        if st.session_state.get("home_mod_calc_monthly", 0) > 0:
+                            default = st.session_state["home_mod_calc_monthly"]
+                    if "Medicare premiums" in label: help_txt = "Monthly total for Parts B/D/Advantage premiums."
+                    if "dental" in label.lower(): help_txt = "Out‑of‑pocket dental/vision/hearing monthly average."
+                    if "Other debts" in label: help_txt = "Credit cards, personal loans, etc."
+                    if "Pet care" in label: help_txt = "Food, meds, vet savings for pets."
+                    if "Entertainment" in label: help_txt = "Hobbies, streaming, outings — optional but realistic."
+                if gid == "group_assets":
+                    if "Other liquid assets" in label: help_txt = "Checking/savings, brokerage, CDs, spendable 401k/IRA, cash reserves."
+                # render
                 if kind == "boolean":
                     v = st.checkbox(label, value=(str(default).lower() in {"yes","true","1"}))
                     ans[label] = v
                 elif kind == "select":
-                    v = st.selectbox(label, f.get("options", []))
+                    v = st.selectbox(label, f.get("options", []), help=help_txt)
                     ans[label] = v
                 else:
-                    v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f")
+                    v = st.number_input(label, min_value=0.0, value=float(default), step=50.0, format="%.2f", help=help_txt)
                     ans[label] = v
             return ans
 
