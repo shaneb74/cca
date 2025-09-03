@@ -1,7 +1,7 @@
 # streamlit_app.py
-# Senior Care Cost Planner – production-ready single-file app
+# Senior Care Cost Planner – demo-ready
 # Requires: streamlit (see requirements_streamlit.txt)
-# Expects the JSON files next to this file:
+# Files expected in the same folder:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
 #   - senior_care_modular_overlay.json
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix"
+APP_VERSION = "v2025-09-03-demofix3"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -89,21 +89,15 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
 
 # -------------------------- core calculations -----------------------------
 def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Uses spec lookups/settings to compute monthly cost, income, gap, and years funded.
-    Honors per-person in-home Hours/Days sliders when present.
-    """
     settings = spec.get("settings", {})
     lookups = spec.get("lookups", {})
 
-    # settings
     default_days_per_month = int(settings.get("days_per_month", 30))
     mem_mult = float(settings.get("memory_care_multiplier", 1.25))
     second_person_discount = float(settings.get("second_person_cost", 1200.0))
     years_cap = int(settings.get("display_cap_years_funded", 30))
     ltc_monthly_add = float(settings.get("ltc_monthly_add", 1800.0))
 
-    # lookups
     state = inputs.get("state", "National")
     state_mult = float(lookups.get("state_multipliers", {"National": 1.0}).get(state, 1.0))
     room_type_prices = {k: float(v) for k, v in lookups.get("room_type", {}).items()}
@@ -137,12 +131,13 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
         if care_type and care_type.startswith("In-Home Care"):
             hours = int(inputs.get(f"hours_per_day_person_{tag_letter}", 0) or 0)
+            hours = max(0, min(24, hours))
             days = int(inputs.get(f"days_per_month_person_{tag_letter}", default_days_per_month) or default_days_per_month)
-            daily_cost_for_hours = interp_in_home_daily(hours)  # cost per day given hours
+            days = max(0, min(31, days))
+            daily_cost_for_hours = interp_in_home_daily(hours)
             mob_home = mobility_adders_home.get(mobility, 0.0)
-            # daily base is matrix + mobility + chronic
             daily = daily_cost_for_hours + mob_home + chronic_add
-            base = daily * max(0, min(31, days))
+            base = daily * days
             return money(base * state_mult)
 
         if care_type in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
@@ -154,7 +149,7 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
                 base *= mem_mult
             return money(base * state_mult)
 
-        return 0.0  # Stay at home
+        return 0.0
 
     def shared_unit_discount() -> float:
         a_type = inputs.get("care_type_person_a")
@@ -164,20 +159,17 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
         in_fac_a = a_type in ["Assisted Living (or Adult Family Home)", "Memory Care"]
         in_fac_b = b_type in ["Assisted Living (or Adult Family Home)", "Memory Care"]
         if in_fac_a and in_fac_b:
-            # simple flat second-person discount from settings
             return money(second_person_discount * state_mult)
         return 0.0
 
     care_cost = per_person_cost("a") + per_person_cost("b") - shared_unit_discount()
 
-    # home carry if keeping home
     home_sum = 0.0
     if inputs.get("maintain_home_household"):
         for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"]:
             home_sum += float(inputs.get(k, 0.0))
     home_sum = money(home_sum)
 
-    # optional monthly
     optional_fields = [
         "medicare_premiums","dental_vision_hearing","home_modifications_monthly","other_debts_monthly",
         "pet_care","entertainment_hobbies","optional_rx","optional_personal_care","optional_phone_internet",
@@ -186,13 +178,13 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
     ]
     optional_sum = money(sum(float(inputs.get(k, 0.0)) for k in optional_fields))
 
-    # income
     va_total = float(inputs.get("va_benefit_person_a", 0.0)) + float(inputs.get("va_benefit_person_b", 0.0))
+
     ltc_total = 0.0
     if str(inputs.get("ltc_insurance_person_a", "No")).lower() in {"yes","true","1"}:
-        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
+        ltc_total += ltc_monthly_add
     if str(inputs.get("ltc_insurance_person_b", "No")).lower() in {"yes","true","1"}:
-        ltc_total += float(settings.get("ltc_monthly_add", 1800.0))
+        ltc_total += ltc_monthly_add
 
     hecm = float(inputs.get("hecm_draw_monthly", 0.0))
     heloc_draw = float(inputs.get("heloc_draw_monthly", 0.0))
@@ -213,7 +205,6 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
     monthly_cost = money(care_cost + optional_sum + home_sum)
 
-    # assets
     total_assets = money(sum([
         float(inputs.get("home_equity", 0.0)),
         float(inputs.get("other_assets", 0.0)),
@@ -250,7 +241,6 @@ THEME_CSS = """
   h2 { font-size: 1.4rem; font-weight: 700; }
   h3 { font-size: 1.2rem; font-weight: 700; }
   .stButton>button { padding: .7rem 1.2rem; border-radius: 12px; font-size: 1rem; }
-  [data-testid="stSidebar"] { width: 360px; min-width: 360px; }
   hr { border: 0; height: 1px; background: #e5e7eb; margin: .75rem 0; }
 </style>
 """
@@ -266,7 +256,7 @@ def sidebar_summary(results: Dict[str, Any]):
     st.sidebar.metric("Total monthly cost", mfmt(results.get("monthly_cost",0)))
     st.sidebar.metric("Household income", mfmt(results.get("household_income",0)))
     gap = results.get("monthly_gap", 0)
-    st.sidebar.metric(("🔴" if gap > 0 else "🟢") + " Monthly gap", mfmt(gap))
+    st.sidebar.metric(("RED" if gap > 0 else "GREEN") + " Monthly gap", mfmt(gap))
     y = results.get("years_funded_cap30")
     st.sidebar.metric("Years funded (cap 30)", "N/A" if y is None else y)
     st.sidebar.markdown("---")
@@ -339,34 +329,42 @@ def main():
                     "I'm planning for a friend or someone else"
                 ], index=0)
 
+                # We render exactly the inputs you described.
                 if who == "I'm planning for myself":
-                    # No names. A = You. Single-person flow.
+                    your_name = st.text_input("Your name", placeholder="e.g., Alex")
                     st.session_state.include_b = False
-                    st.session_state.name_hint = {"A": "You", "B": "Partner"}
+                    st.session_state.name_hint = {"A": your_name or "You", "B": "Partner"}
+
                 elif who == "I'm planning for my spouse/partner":
-                    spouse = st.text_input("Spouse/partner's name", placeholder="e.g., Mary")
-                    me = st.text_input("Your name", placeholder="e.g., Alex")
-                    st.session_state.include_b = True
-                    st.session_state.name_hint = {"A": spouse or "Spouse", "B": me or "You"}
+                    recip = st.text_input("Care recipient's name", placeholder="e.g., Mary")
+                    add_second = st.checkbox("Add a second person?", value=False)
+                    second_name = ""
+                    include_spouse = False
+                    if add_second:
+                        second_name = st.text_input("Second person's name (optional)")
+                        include_spouse = st.checkbox("Second person is the spouse/partner included for household costs", value=True)
+                    st.session_state.include_b = bool(add_second and include_spouse)
+                    st.session_state.name_hint = {"A": recip or "Care Recipient", "B": (second_name or "Spouse") if st.session_state.include_b else "Partner"}
+
                 elif who == "I'm planning for my parent/parent-in-law":
-                    a_name = st.text_input("First parent's name", placeholder="e.g., Teresa")
+                    a_name = st.text_input("Care recipient's name", placeholder="e.g., Teresa")
                     include_other = st.checkbox("Include the other parent for household costs?", value=True)
-                    b_name = st.text_input("Second parent's name", placeholder="e.g., Shane") if include_other else ""
-                    _planner = st.text_input("Your name", placeholder="e.g., Alex")
+                    b_name = st.text_input("Second parent's name (optional)", placeholder="e.g., Shane") if include_other else ""
                     st.session_state.include_b = include_other
                     st.session_state.name_hint = {"A": a_name or "Parent 1", "B": b_name or "Parent 2"}
+
                 elif who == "I'm planning for a couple (both parents/partners)":
-                    a_name = st.text_input("First person’s name", placeholder="e.g., Teresa")
-                    b_name = st.text_input("Second person’s name", placeholder="e.g., Shane")
-                    _planner = st.text_input("Your name", placeholder="e.g., Alex")
+                    a_name = st.text_input("First person's name", placeholder="e.g., Teresa")
+                    b_name = st.text_input("Second person's name", placeholder="e.g., Shane")
                     st.session_state.include_b = True
                     st.session_state.name_hint = {"A": a_name or "Person 1", "B": b_name or "Person 2"}
+
                 else:
                     a_name = st.text_input("Care recipient's name", placeholder="e.g., Mary")
-                    _planner = st.text_input("Your name", placeholder="e.g., Alex")
                     include_spouse = st.checkbox("Include their spouse/partner for household costs?", value=False)
+                    b_name = st.text_input("Spouse/partner name (optional)") if include_spouse else ""
                     st.session_state.include_b = include_spouse
-                    st.session_state.name_hint = {"A": a_name or "Person A", "B": "Partner"}
+                    st.session_state.name_hint = {"A": a_name or "Person A", "B": b_name or "Partner"}
 
                 # Location select
                 states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
@@ -377,13 +375,13 @@ def main():
 
                 st.markdown("**Home & funding approach**")
                 home_plan = st.radio("How will the home factor into paying for care?", [
-                    "Keep living in the home (don’t tap equity)",
+                    "Keep living in the home (don't tap equity)",
                     "Sell the home (use net proceeds)",
                     "Use reverse mortgage (HECM)",
                     "Consider a HELOC (home equity line)"
                 ], index=0)
                 inp = st.session_state.inputs
-                inp["maintain_home_household"] = (home_plan == "Keep living in the home (don’t tap equity)")
+                inp["maintain_home_household"] = (home_plan == "Keep living in the home (don't tap equity)")
                 inp["home_to_assets"] = (home_plan == "Sell the home (use net proceeds)")
                 inp["expect_hecm"] = (home_plan == "Use reverse mortgage (HECM)")
                 inp["expect_heloc"] = (home_plan == "Consider a HELOC (home equity line)")
@@ -394,7 +392,7 @@ def main():
                     mortgage_payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f")
                     fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f")
                     net = max(0.0, sell_price - mortgage_payoff - fees)
-                    st.info(f"Estimated **net proceeds**: {mfmt(net)} → will appear in Assets later.")
+                    st.info(f"Estimated net proceeds: {mfmt(net)} (auto-added to Assets)")
                     inp.update({"sell_price": sell_price, "mortgage_payoff": mortgage_payoff, "selling_fees": fees, "home_equity": net})
 
             with c2:
@@ -427,7 +425,6 @@ def main():
         with st.form("form_step2", clear_on_submit=False):
             def render_person(tag_key: str, display_name: str):
                 choices = care_options_for(tag_key)
-                # default to in-home if available
                 default_idx = 0
                 for i, c in enumerate(choices):
                     if c.startswith("In-Home Care"):
@@ -438,30 +435,39 @@ def main():
                 inp[f"care_type_person_{tag_key[-1]}"] = care
                 inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
 
+                # Reserve placeholders to avoid front-end mounting errors when toggling
+                hours_ph = st.empty()
+                days_ph = st.empty()
+
                 if care.startswith("In-Home Care"):
-                    hours = st.slider(
-                        "Hours of paid care per day (0–24)",
-                        min_value=0, max_value=24,
-                        value=int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0)),
-                        step=1, key=f"hours_slider_{tag_key}"
-                    )
+                    # Hours
+                    hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0) or 0)
+                    hours_val = max(0, min(24, hours_val))
+                    with hours_ph:
+                        hours = st.slider(
+                            "Hours of paid care per day (0-24)",
+                            min_value=0, max_value=24, value=hours_val, step=1, key=f"hours_slider_{tag_key}"
+                        )
                     inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
 
-                    days = st.slider(
-                        "Days of paid care per month (0–31)",
-                        min_value=0, max_value=31,
-                        value=int(inp.get(f"days_per_month_person_{tag_key[-1]}", spec.get("settings", {}).get("days_per_month", 30))),
-                        step=1, key=f"days_slider_{tag_key}"
-                    )
+                    # Days
+                    default_days = int(spec.get("settings", {}).get("days_per_month", 30))
+                    days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", default_days) or default_days)
+                    days_val = max(0, min(31, days_val))
+                    with days_ph:
+                        days = st.slider(
+                            "Days of paid care per month (0-31)",
+                            min_value=0, max_value=31, value=days_val, step=1, key=f"days_slider_{tag_key}"
+                        )
                     inp[f"days_per_month_person_{tag_key[-1]}"] = int(days)
 
-                    st.caption("Tip: Many families start with 2–4 hours per day, around 20 days per month.")
+                    st.caption("Tip: many families start with 2-4 hours/day around 20 days/month.")
 
                 elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
                     room_types = list(spec.get("lookups", {}).get("room_type", {}).keys()) or ["Studio", "1 Bedroom", "Shared"]
                     room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}")
                     inp[f"room_type_person_{tag_key[-1]}"] = room
-
+                # Core selectors used in all paths
                 level = st.selectbox("Care level", ["Low", "Medium", "High"], index=1, key=f"level_{tag_key}")
                 inp[f"care_level_person_{tag_key[-1]}"] = level
 
@@ -497,19 +503,18 @@ def main():
         spec_groups = {g["id"]: g for g in spec.get("ui_groups", [])}
 
         if inp.get("home_to_assets"):
-            st.info("Home plan: **Sell the home** — Net proceeds auto-populate in Assets.")
+            st.info("Home plan: Sell the home — net proceeds auto-populate in Assets.")
         elif inp.get("expect_hecm"):
-            st.info("Home plan: **Reverse mortgage (HECM)** — Add expected monthly draw in Assets.")
+            st.info("Home plan: Reverse mortgage (HECM) — add expected monthly draw in Assets.")
         elif inp.get("expect_heloc"):
-            st.info("Home plan: **Consider a HELOC** — Optional draw and payment in Assets.")
+            st.info("Home plan: Consider a HELOC — optional draw and payment in Assets.")
         else:
-            st.info("Home plan: **Keep living in the home** — Mortgage/taxes/insurance/utilities are included below.")
+            st.info("Home plan: Keep living in the home — mortgage/taxes/insurance/utilities are included below.")
 
         def render_group(gid: str, rename: Optional[Dict[str,str]] = None) -> Dict[str, Any]:
             g = spec_groups.get(gid)
             if not g:
                 return {}
-            # hide home carry group if not keeping home
             if gid == "group_home_carry" and not inp.get("maintain_home_household"):
                 return {}
 
@@ -525,7 +530,7 @@ def main():
                     key = f.get("field")
                     if not key:
                         continue
-                    # Suppress Person B fields entirely if include_b == False
+                    # Hide all Person B fields if not included
                     if not st.session_state.include_b and key.endswith("_person_b"):
                         continue
 
