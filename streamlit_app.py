@@ -1,5 +1,6 @@
 # streamlit_app.py
 # Senior Care Cost Planner – reactive steps + tooltips + descriptive options + home mods box
+# Adds spouse/partner default: Person B "Stay at Home" with None selectors unless changed
 # Expects:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
 #   - senior_care_modular_overlay.json
@@ -10,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix-reactive-step1-2-tooltips-homemods"
+APP_VERSION = "v2025-09-03-demofix-reactive-step1-2-tooltips-homemods-spouseDefault"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -123,11 +124,9 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
         chronic_add = chronic_adders.get(chronic, 0.0)
 
         if care_type and care_type.startswith("In-Home Care"):
-            hours = int(inputs.get(f"hours_per_day_person_{tag_letter}", 0) or 0)
+            hours = int(inputs.get(f"hours_per_day_person_{tag_letter}", 4) or 4)
             hours = max(0, min(24, hours))
-            # default to 20 if not set
-            days_default = 20
-            days = int(inputs.get(f"days_per_month_person_{tag_letter}", days_default) or days_default)
+            days = int(inputs.get(f"days_per_month_person_{tag_letter}", 20) or 20)
             days = max(0, min(31, days))
             daily_cost_for_hours = interp_in_home_daily(hours)
             mob_home = mobility_adders_home.get(mobility, 0.0)
@@ -288,12 +287,7 @@ def progress_header(step: int):
             else:
                 st.markdown(f"▫️ {labels[i-1]}")
 
-# -------- helpers for descriptive select labels keeping original keys -----
 def build_descriptive_options(keys: List[str], desc_map: Dict[str, str]) -> Tuple[List[str], Dict[str, str]]:
-    """
-    Returns (display_labels, display_to_key_map).
-    For each key, if we have a description, we render "Key (desc)".
-    """
     labels = []
     mapping = {}
     for k in keys:
@@ -341,6 +335,8 @@ def main():
             ]
             who = st.radio("Select the situation", options, index=st.session_state.get("who_idx", 0), key="who_choice")
             st.session_state.who_idx = options.index(who)
+            # Flag for Step 2 defaulting logic
+            st.session_state.audience_spouse_mode = (who == "I'm planning for my spouse/partner")
 
             if who == "I'm planning for myself":
                 cols = st.columns(2)
@@ -434,13 +430,11 @@ def main():
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
 
-        # descriptive dictionaries (used if keys match)
         care_level_desc = {
             "Low": "help with a few daily tasks",
             "Medium": "daily support with several tasks",
             "High": "extensive supervision and care"
         }
-        # Mobility keys in your lookups might be either these or Low/Medium/High
         mobility_desc_preferred = {
             "No support needed": "independent",
             "Walker": "needs walker or similar",
@@ -474,11 +468,20 @@ def main():
 
         def render_person(tag_key: str, display_name: str):
             choices = care_options_for(tag_key)
+
+            # Default: In-Home Care. Override for spouse-mode Person B to Stay at Home.
             default_idx = 0
             for i, c in enumerate(choices):
                 if c.startswith("In-Home Care"):
                     default_idx = i
                     break
+            if (
+                tag_key.endswith("b")
+                and st.session_state.get("audience_spouse_mode")
+                and st.session_state.include_b
+                and "Stay at Home (no paid care)" in choices
+            ):
+                default_idx = choices.index("Stay at Home (no paid care)")
 
             care = st.selectbox(
                 f"Care type for {display_name}",
@@ -487,6 +490,15 @@ def main():
             )
             inp[f"care_type_person_{tag_key[-1]}"] = care
             inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
+
+            # If spouse-mode B is defaulting to Stay, force the three attributes to None and hide controls
+            hide_common_selectors = False
+            if care == "Stay at Home (no paid care)":
+                hide_common_selectors = True
+                # set None for clarity in downstream logic
+                inp[f"care_level_person_{tag_key[-1]}"] = "None"
+                inp[f"mobility_person_{tag_key[-1]}"] = "None"
+                inp[f"chronic_person_{tag_key[-1]}"] = "None"
 
             if care.startswith("In-Home Care"):
                 hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 4) or 4)
@@ -511,50 +523,48 @@ def main():
                                     help="Typical options are Studio, 1 Bedroom, or Shared.")
                 inp[f"room_type_person_{tag_key[-1]}"] = room
 
-            # ---- Care level with descriptive labels ----
-            level_keys = ["Low", "Medium", "High"]
-            level_labels, level_map = build_descriptive_options(level_keys, care_level_desc)
-            level_display = st.selectbox(
-                "Care level",
-                level_labels, index=level_labels.index([l for l in level_labels if l.startswith("Medium")][0]),
-                key=f"level_{tag_key}",
-                help="How much day-to-day help is needed."
-            )
-            inp[f"care_level_person_{tag_key[-1]}"] = level_map[level_display]
+            # Common selectors are irrelevant when staying at home (no paid care)
+            if not hide_common_selectors:
+                level_keys = ["Low", "Medium", "High"]
+                level_labels, level_map = build_descriptive_options(level_keys, care_level_desc)
+                # Default to Medium
+                level_display = st.selectbox(
+                    "Care level",
+                    level_labels, index=level_labels.index([l for l in level_labels if l.startswith("Medium")][0]),
+                    key=f"level_{tag_key}",
+                    help="How much day-to-day help is needed."
+                )
+                inp[f"care_level_person_{tag_key[-1]}"] = level_map[level_display]
 
-            # ---- Mobility with descriptive labels (prefer No support/Walker/Wheelchair if present) ----
-            mobility_keys_lookup = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
-            if set(mobility_keys_lookup) >= {"No support needed","Walker","Wheelchair"}:
-                mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_preferred)
-            else:
-                mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_alt)
+                mobility_keys_lookup = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
+                if set(mobility_keys_lookup) >= {"No support needed","Walker","Wheelchair"}:
+                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_preferred)
+                else:
+                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_alt)
 
-            # pick Medium/Walker by default if available
-            default_mob_label = mob_labels[0]
-            for lbl in mob_labels:
-                if "walker" in lbl.lower() or "medium" in lbl.lower():
-                    default_mob_label = lbl
-                    break
+                default_mob_label = mob_labels[0]
+                for lbl in mob_labels:
+                    if "walker" in lbl.lower() or "medium" in lbl.lower():
+                        default_mob_label = lbl
+                        break
 
-            mob_display = st.selectbox(
-                "Mobility",
-                mob_labels, index=mob_labels.index(default_mob_label),
-                key=f"mob_{tag_key}",
-                help="Select equipment or assistance typically used for getting around."
-            )
-            inp[f"mobility_person_{tag_key[-1]}"] = mob_map[mob_display]
+                mob_display = st.selectbox(
+                    "Mobility",
+                    mob_labels, index=mob_labels.index(default_mob_label),
+                    key=f"mob_{tag_key}",
+                    help="Select equipment or assistance typically used for getting around."
+                )
+                inp[f"mobility_person_{tag_key[-1]}"] = mob_map[mob_display]
 
-            # ---- Chronic conditions with descriptive labels ----
-            cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
-            cc_labels, cc_map = build_descriptive_options(cc_keys, chronic_desc)
-            # default to "None"
-            cc_display = st.selectbox(
-                "Chronic conditions",
-                cc_labels, index=cc_labels.index([l for l in cc_labels if l.startswith("None")][0]) if any(l.startswith("None") for l in cc_labels) else 0,
-                key=f"cc_{tag_key}",
-                help="General health complexity. Choose “Some” for one or two managed conditions; “Multiple/Complex” for several or advanced."
-            )
-            inp[f"chronic_person_{tag_key[-1]}"] = cc_map[cc_display]
+                cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
+                cc_labels, cc_map = build_descriptive_options(cc_keys, {"None":"no chronic conditions","Some":"one or two managed conditions","Multiple/Complex":"multiple conditions or complex care"})
+                cc_display = st.selectbox(
+                    "Chronic conditions",
+                    cc_labels, index=cc_labels.index([l for l in cc_labels if l.startswith("None")][0]) if any(l.startswith("None") for l in cc_labels) else 0,
+                    key=f"cc_{tag_key}",
+                    help="General health complexity. Choose “Some” for one or two managed conditions; “Multiple/Complex” for several or advanced."
+                )
+                inp[f"chronic_person_{tag_key[-1]}"] = cc_map[cc_display]
 
         render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
         if st.session_state.include_b:
@@ -570,7 +580,7 @@ def main():
             st.session_state.step = 3
             st.rerun()
 
-    # ---------------- Step 3
+    # ---------------- Step 3 (unchanged from your approved build)
     elif step == 3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. If something doesn’t apply, leave it at 0.")
@@ -650,7 +660,7 @@ def main():
                     if ans:
                         grouped_answers[gid] = ans
 
-            # -------- Home modifications one-time box --------
+            # Home modifications one-time box (as previously delivered)
             st.markdown("### Home modifications (one-time costs)")
             st.caption("These are upfront improvements to make the home safer and more accessible. They are **not** included in monthly expenses.")
             mods = [
