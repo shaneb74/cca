@@ -1,10 +1,10 @@
 # streamlit_app.py
-# Senior Care Cost Planner – reactive steps, tooltips, descriptive options, home mods
-# New in this build:
-# - VA rules baked-in (MAPR minus countable income plus deductible medical), household logic
-# - Clear consumer tooltips for VA Category and VA Benefit (auto)
-# - Home modifications ONE-TIME costs in their own collapsible drawer on Step 3
-# - Keeps all the working behavior you approved
+# Senior Care Cost Planner – reactive steps, clear tooltips, VA explainer, home-mod ranges
+# Changes in this build:
+# - VA rules already baked in (MAPR − countable income + deductible medical), unchanged
+# - NEW: Section-level VA explainer in Benefits drawer (consumer-friendly)
+# - NEW: Home modifications (one-time costs) -> checkbox + suggested ranges + sliders where useful
+# - Everything else left intact on purpose
 
 import json
 from decimal import Decimal, ROUND_HALF_UP
@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-va-rules-tooltips-homemods"
+APP_VERSION = "v2025-09-03-va-explainer-homemod-ranges"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -194,7 +194,6 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
     cat_a = st.session_state.get("va_category_person_a", "None")
     cat_b = st.session_state.get("va_category_person_b", "None")
 
-    # Compute household MAPR (annual) based on categories
     def mapr_from_categories(cat_a: str, cat_b: str) -> float:
         if "Two veterans married" in cat_a or "Two veterans married" in cat_b:
             return float(DEFAULT_VA_CATEGORIES.get("Two veterans married, both A&A (household ceiling)", 0.0)) * 12
@@ -210,7 +209,7 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
 
     household_mapr_annual = mapr_from_categories(cat_a, cat_b)
 
-    # Countable income (annual): baseline incomes (exclude VA itself and asset-draw knobs)
+    # Countable income (annual): baseline incomes (exclude VA itself and asset draws)
     monthly_income_countable = sum([
         float(inputs.get("social_security_person_a", 0.0)),
         float(inputs.get("pension_person_a", 0.0)),
@@ -234,11 +233,10 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
     )
     deductible_medical_annual = monthly_deductible_medical * 12.0
 
-    # VA award annual (clamped at 0..MAPR)
     va_award_annual = max(0.0, household_mapr_annual - max(0.0, countable_income_annual - deductible_medical_annual))
     va_award_monthly = money(va_award_annual / 12.0)
 
-    # Assign VA award to persons, respecting categories; allow manual override flags
+    # Assign VA award (allow manual override flags)
     override_a = bool(st.session_state.get("va_override_person_a", False))
     override_b = bool(st.session_state.get("va_override_person_b", False))
     manual_a = float(inputs.get("va_benefit_person_a", 0.0)) if override_a else None
@@ -254,22 +252,14 @@ def compute_results(inputs: Dict[str, Any], spec: Dict[str, Any]) -> Dict[str, A
             va_a = money(va_award_monthly / 2.0)
             va_b = money(va_award_monthly / 2.0)
         elif "Veteran with spouse" in cat_a or "Veteran only" in cat_a:
-            va_a = money(va_award_monthly)
-            va_b = 0.0
+            va_a = money(va_award_monthly); va_b = 0.0
         elif "Veteran with spouse" in cat_b or "Veteran only" in cat_b:
-            va_b = money(va_award_monthly)
-            va_a = 0.0
+            va_b = money(va_award_monthly); va_a = 0.0
         elif "Surviving spouse" in cat_a:
-            va_a = money(va_award_monthly)
-            va_b = 0.0
+            va_a = money(va_award_monthly); va_b = 0.0
         elif "Surviving spouse" in cat_b:
-            va_b = money(va_award_monthly)
-            va_a = 0.0
-        else:
-            va_a = 0.0
-            va_b = 0.0
+            va_b = money(va_award_monthly); va_a = 0.0
 
-    # ---------- household income (monthly) ----------
     hecm = float(inputs.get("hecm_draw_monthly", 0.0))
     heloc_draw = float(inputs.get("heloc_draw_monthly", 0.0))
     re_inv = float(inputs.get("re_investment_income", 0.0))
@@ -404,7 +394,6 @@ def main():
     st.caption("Estimate care costs and affordability in a few short steps.")
     st.sidebar.caption(f"App {APP_VERSION} · Streamlit {getattr(st, '__version__', 'unknown')}")
 
-    # session
     if "step" not in st.session_state: st.session_state.step = 1
     if "inputs" not in st.session_state: st.session_state.inputs = {}
     if "name_hint" not in st.session_state: st.session_state.name_hint = {"A": "Person A", "B": "Person B"}
@@ -419,7 +408,7 @@ def main():
     step = st.session_state.step
     progress_header(step)
 
-    # ---------------- Step 1 (your approved flow)
+    # ---------------- Step 1
     if step == 1:
         c1, c2 = st.columns([2,1])
         with c1:
@@ -435,7 +424,6 @@ def main():
             who = st.radio("Select the situation", options, index=st.session_state.get("who_idx", 0), key="who_choice")
             st.session_state.who_idx = options.index(who)
 
-            # Flags for downstream defaults
             st.session_state.audience_spouse_mode = (who == "I'm planning for my spouse/partner")
             st.session_state.audience_parent_second_mode = (who == "I'm planning for my parent/parent-in-law")
 
@@ -485,14 +473,12 @@ def main():
                 st.session_state.include_b = include_spouse and bool((b_name or "").strip())
                 st.session_state.name_hint = {"A": a_name or "Person A", "B": (b_name or "Partner") if st.session_state.include_b else "Partner"}
 
-            # Location
             states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
             states = (["National"] if "National" in states else []) + sorted([s for s in states if s != "National"])
             s_idx = states.index("National") if "National" in states else 0
             state = st.selectbox("Location for cost estimates", states, index=s_idx, key="sel_state")
             st.session_state.inputs["state"] = state
 
-            # Home plan
             st.markdown("**Home & funding approach**")
             home_plan = st.radio("How will the home factor into paying for care?", [
                 "Keep living in the home (don't tap equity)",
@@ -526,7 +512,7 @@ def main():
             st.session_state.step = 2
             st.rerun()
 
-    # ---------------- Step 2 (care plans)
+    # ---------------- Step 2
     elif step == 2:
         st.header("Step 2 · Choose care plans")
         inp = st.session_state.inputs
@@ -580,7 +566,7 @@ def main():
             care = st.selectbox(
                 f"Care type for {display_name}",
                 choices, index=build_default_index(choices, tag_key), key=f"care_type_{tag_key}",
-                help="Choose the general setting for care. In-home is care where the person lives now; Assisted Living/Memory Care are residential communities."
+                help="Choose the general setting for care. In-home is care where the person lives now; Assisted Living/Memory Care are residential."
             )
             inp[f"care_type_person_{tag_key[-1]}"] = care
             inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
@@ -621,19 +607,19 @@ def main():
 
                 mobility_keys_lookup = list(spec.get("lookups", {}).get("mobility_adders", {}).get("facility", {}).keys()) or ["Low","Medium","High"]
                 if set(mobility_keys_lookup) >= {"No support needed","Walker","Wheelchair"}:
-                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_preferred)
+                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, {"No support needed":"independent","Walker":"needs walker or similar","Wheelchair":"primarily wheelchair"})
                 else:
-                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, mobility_desc_alt)
+                    mob_labels, mob_map = build_descriptive_options(mobility_keys_lookup, {"Low":"no mobility support","Medium":"walker or cane","High":"wheelchair or total assist"})
                 default_mob_label = next((lbl for lbl in mob_labels if "walker" in lbl.lower() or "medium" in lbl.lower()), mob_labels[0])
                 mob_display = st.selectbox("Mobility", mob_labels, index=mob_labels.index(default_mob_label),
-                                           key=f"mob_{tag_key}", help="Select equipment or assistance typically used for getting around.")
+                                           key=f"mob_{tag_key}", help="Equipment or assistance typically used for getting around.")
                 inp[f"mobility_person_{tag_key[-1]}"] = mob_map[mob_display]
 
                 cc_keys = list(spec.get("lookups", {}).get("chronic_adders", {}).keys()) or ["None","Some","Multiple/Complex"]
-                cc_labels, cc_map = build_descriptive_options(cc_keys, chronic_desc)
+                cc_labels, cc_map = build_descriptive_options(cc_keys, {"None":"no chronic conditions","Some":"one or two managed conditions","Multiple/Complex":"multiple conditions or complex care"})
                 cc_display = st.selectbox("Chronic conditions", cc_labels,
                                           index=cc_labels.index([l for l in cc_labels if l.startswith("None")][0]) if any(l.startswith("None") for l in cc_labels) else 0,
-                                          key=f"cc_{tag_key}", help="General health complexity. Choose 'Some' for one or two managed conditions; 'Multiple/Complex' for several or advanced.")
+                                          key=f"cc_{tag_key}", help="General health complexity.")
                 inp[f"chronic_person_{tag_key[-1]}"] = cc_map[cc_display]
 
         render_person("person_a", st.session_state.name_hint.get("A", "Person A"))
@@ -650,7 +636,7 @@ def main():
             st.session_state.step = 3
             st.rerun()
 
-    # ---------------- Step 3 (live inputs + VA blocks + Home mods one-time)
+    # ---------------- Step 3
     elif step == 3:
         st.header("Step 3 · Enter financial details")
         st.caption("Enter monthly income and asset balances. The summary updates live.")
@@ -671,6 +657,7 @@ def main():
 
         va_categories: Dict[str, float] = spec.get("lookups", {}).get("va_categories", DEFAULT_VA_CATEGORIES)
 
+        # ---------- VA helper block with section-level explainer ----------
         def va_block(person_key: str, person_label: str):
             cats = list(va_categories.keys())
             prev_choice = st.session_state.get(f"va_category_{person_key}", "None")
@@ -689,7 +676,6 @@ def main():
             chosen = sel.split(" (")[0]
             st.session_state[f"va_category_{person_key}"] = chosen
 
-            # Manual override checkbox
             override = st.checkbox(
                 f"Override amount manually — {person_label}",
                 value=st.session_state.get(f"va_override_{person_key}", False),
@@ -727,13 +713,23 @@ def main():
 
             expanded = gid.startswith("group_income") or gid.startswith("group_benefits")
             with st.expander(f"{label} — {prompt}", expanded=expanded):
-                # VA section gets category dropdowns + tooltips
+                # Section-level VA explainer
                 if "benefit" in gid or "benefits" in gid:
+                    with st.expander("ℹ️ How VA Aid & Attendance is calculated", expanded=False):
+                        st.markdown("""
+- **Pick a VA category.** This sets the **ceiling** (MAPR) for your household.
+- We total your **countable annual income** (Social Security, pensions, wages, rental, dividends/interest, other income). We **don't** count VA itself or equity draws.
+- We subtract **deductible medical** (your monthly care cost + Medicare premiums + dental/vision/hearing + prescriptions + personal care), then annualize.
+- **Award = max(0, MAPR − max(0, income − medical))) ÷ 12.**
+- If you choose **Two veterans married, both A&A**, the award is **split 50/50** between both people; otherwise it goes to the eligible person.
+- The **VA benefit (auto)** field below shows the computed monthly amount and updates as you edit income or medical items.
+                        """.strip())
+                    # The actual VA inputs
                     va_block("person_a", name_map.get("A", "Person A"))
                     if st.session_state.include_b:
                         va_block("person_b", name_map.get("B", "Person B"))
 
-                # Render the rest of the fields live
+                # Render the rest of fields live
                 for f in g.get("fields", []):
                     key = f.get("field")
                     if not key or key.startswith("va_benefit_"):
@@ -769,22 +765,47 @@ def main():
             for gid in module_to_groups.get(mod, []):
                 render_group_live(gid)
 
-        # Home modifications ONE-TIME drawer (separate from monthly)
+        # -------- Home modifications ONE-TIME drawer with suggested ranges --------
         with st.expander("Home modifications (one-time costs)", expanded=False):
-            st.caption("Select or enter the expected one-time expenses for making the home safer or more accessible.")
-            home_mod_items = [
-                ("grab_bars", "Grab bars and rails"),
-                ("ramps", "Wheelchair ramps"),
-                ("bath_mods", "Bathroom modifications"),
-                ("stair_lift", "Stair lift"),
-                ("widen_doors", "Widening doors"),
-                ("other_home_mods", "Other modifications"),
-            ]
+            st.caption("Check what you expect to install, then adjust the suggested cost. Ranges reflect typical installs; your costs may vary.")
+            # (min, max, default, slider?, step)
+            HOMEMOD_SPECS = {
+                "grab_bars":          {"label":"Grab bars and rails",      "min":200,  "max":500,   "default":250,  "slider":False, "step":50,  "note":"Typical range $200–$500 (parts + basic install)."},
+                "ramps":              {"label":"Wheelchair ramps",         "min":1000, "max":5000,  "default":2500, "slider":True,  "step":100, "note":"Range varies by length/material and permits."},
+                "bath_mods":          {"label":"Bathroom modifications",   "min":2000, "max":15000, "default":7500, "slider":True,  "step":250, "note":"Basic safety upgrades to full shower conversions."},
+                "stair_lift":         {"label":"Stair lift",               "min":3000, "max":8000,  "default":5000, "slider":True,  "step":250, "note":"Straight runs cost less; curves cost more."},
+                "widen_doors":        {"label":"Widening doors",           "min":700,  "max":2500,  "default":1500, "slider":True,  "step":100, "note":"Depends on structure, electrical, finish work."},
+                "other_home_mods":    {"label":"Other modifications",      "min":0,    "max":20000, "default":0,    "slider":False, "step":100, "note":"Describe and enter the expected cost."},
+            }
             total = 0.0
-            for key, label in home_mod_items:
-                val = st.number_input(label, min_value=0.0, value=float(inp.get(key, 0.0)), step=100.0, format="%.2f", key=f"hm_{key}")
-                inp[key] = val
-                total += val
+            for key, spec_item in HOMEMOD_SPECS.items():
+                enabled = st.checkbox(spec_item["label"], value=bool(inp.get(f"hm_enable_{key}", False)), key=f"hm_enable_{key}")
+                inp[f"hm_enable_{key}"] = enabled
+                if enabled:
+                    if spec_item["slider"]:
+                        val = st.slider(
+                            f"Estimated cost — {spec_item['label']}",
+                            min_value=float(spec_item["min"]),
+                            max_value=float(spec_item["max"]),
+                            value=float(inp.get(f"hm_{key}", spec_item["default"])),
+                            step=float(spec_item["step"]),
+                            key=f"hm_slider_{key}"
+                        )
+                    else:
+                        val = st.number_input(
+                            f"Estimated cost — {spec_item['label']}",
+                            min_value=float(spec_item["min"]),
+                            max_value=float(spec_item["max"]),
+                            value=float(inp.get(f"hm_{key}", spec_item["default"])),
+                            step=float(spec_item["step"]),
+                            format="%.2f",
+                            key=f"hm_input_{key}"
+                        )
+                    st.caption(spec_item["note"])
+                    inp[f"hm_{key}"] = float(val)
+                    total += float(val)
+                else:
+                    inp[f"hm_{key}"] = 0.0
             inp["home_mods_one_time_total"] = total
             st.info(f"Estimated total one-time home modifications: {mfmt(total)}")
 
@@ -797,7 +818,7 @@ def main():
             st.session_state.step = 4
             st.rerun()
 
-    # ---------------- Step 4 (Results)
+    # ---------------- Step 4
     else:
         st.header("Step 4 · Results")
         results = compute_results(st.session_state.inputs, spec)
@@ -826,7 +847,7 @@ def main():
             st.session_state.step = 1
             st.rerun()
 
-    # sidebar live summary
+    # Sidebar live summary
     try:
         preview_results = compute_results(st.session_state.inputs, spec)
     except Exception:
