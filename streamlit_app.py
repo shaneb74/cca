@@ -77,7 +77,11 @@ def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, A
     Merge base spec with overlay using sensible precedence:
     - overlay.lookups extends/overrides base.lookups
     - overlay.modules replaces base.modules if provided
-    - overlay.ui_group_overrides applies field‑level patches
+    - overlay.ui_group_overrides can:
+        * patch fields via field_overrides
+        * replace_fields: replace entire fields list
+        * append_fields: append new fields
+    - overlay.ui_group_additions: add new ui_groups
     """
     spec = _read_json(base_path)
     if not spec:
@@ -509,32 +513,6 @@ def main():
                 ans = render_group(gid, rename=name_map)
                 if ans is not None:
                     grouped_answers[gid] = ans
-
-        # Additional balanced inputs for clarity
-        st.markdown('---')
-        st.subheader('Common monthly income (extra)')
-        with st.expander('Less common income (optional)', expanded=False):
-            other_income = st.number_input('Other monthly income (alimony, trust distributions, board stipends, royalties, etc.)', min_value=0.0, value=float(inp.get('other_income_monthly', 0.0)), step=25.0, format='%.2f')
-            st.session_state.inputs['other_income_monthly'] = other_income
-
-        st.subheader('Common assets (balances)')
-        cA, cB = st.columns(2)
-        with cA:
-            cash_savings = st.number_input('Checking / Savings', min_value=0.0, value=float(inp.get('cash_savings', 0.0)), step=100.0, format='%.2f')
-            ira_total = st.number_input('IRAs (Traditional + Roth)', min_value=0.0, value=float(inp.get('ira_total', 0.0)), step=100.0, format='%.2f')
-        with cB:
-            employer_retirement_total = st.number_input('401(k)/403(b)/457 (combined)', min_value=0.0, value=float(inp.get('employer_retirement_total', 0.0)), step=100.0, format='%.2f')
-            brokerage_taxable = st.number_input('Taxable brokerage', min_value=0.0, value=float(inp.get('brokerage_taxable', 0.0)), step=100.0, format='%.2f')
-        st.session_state.inputs.update({
-            'cash_savings': cash_savings,
-            'ira_total': ira_total,
-            'employer_retirement_total': employer_retirement_total,
-            'brokerage_taxable': brokerage_taxable,
-        })
-        with st.expander('Less common assets (optional)', expanded=False):
-            other_assets_grouped = st.number_input('Other assets (annuities cash value, CDs, HSA, collectibles, etc.)', min_value=0.0, value=float(inp.get('other_assets_grouped', 0.0)), step=100.0, format='%.2f')
-            st.session_state.inputs['other_assets_grouped'] = other_assets_grouped
-
         c1, c2 = st.columns(2)
         if c1.button("← Back"):
             st.session_state.step = 2
