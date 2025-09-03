@@ -1,7 +1,7 @@
 # streamlit_app.py
-# Senior Care Cost Planner – demo-ready
+# Senior Care Cost Planner – demo-ready with fixed Step 1 audiencing
 # Requires: streamlit (see requirements_streamlit.txt)
-# Files expected in the same folder:
+# Expects these files in the same folder:
 #   - senior_care_calculator_v5_full_with_instructions_ui.json
 #   - senior_care_modular_overlay.json
 
@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-demofix3"
+APP_VERSION = "v2025-09-03-demofix4"
 
 JSON_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
@@ -37,16 +37,10 @@ def _read_json(path: str) -> Dict[str, Any]:
         return {}
 
 def load_spec(base_path: str, overlay_path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Load base spec and apply overlay merges:
-      - lookups: merged
-      - modules: replaced if provided
-      - ui_group_overrides: group-level edits
-      - ui_group_additions: appended
-    """
     spec = _read_json(base_path)
     if not spec:
         return {}
+
     if overlay_path and Path(overlay_path).exists():
         overlay = _read_json(overlay_path) or {}
 
@@ -329,57 +323,71 @@ def main():
                     "I'm planning for a friend or someone else"
                 ], index=0)
 
-                # We render exactly the inputs you described.
+                # Exact audiencing behavior
                 if who == "I'm planning for myself":
-                    your_name = st.text_input("Your name", placeholder="e.g., Alex")
+                    # One field: Your name
+                    cols = st.columns(2)
+                    with cols[0]:
+                        your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_self_you")
                     st.session_state.include_b = False
                     st.session_state.name_hint = {"A": your_name or "You", "B": "Partner"}
 
                 elif who == "I'm planning for my spouse/partner":
-                    recip = st.text_input("Care recipient's name", placeholder="e.g., Mary")
-                    add_second = st.checkbox("Add a second person?", value=False)
-                    second_name = ""
-                    include_spouse = False
-                    if add_second:
-                        second_name = st.text_input("Second person's name (optional)")
-                        include_spouse = st.checkbox("Second person is the spouse/partner included for household costs", value=True)
-                    st.session_state.include_b = bool(add_second and include_spouse)
-                    st.session_state.name_hint = {"A": recip or "Care Recipient", "B": (second_name or "Spouse") if st.session_state.include_b else "Partner"}
+                    # Left: care recipient (spouse). Right: your name. Then a checkbox to include you.
+                    cols = st.columns(2)
+                    with cols[0]:
+                        recip = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_spouse_recipient")
+                    with cols[1]:
+                        your_name = st.text_input("Your name", placeholder="e.g., Alex", key="name_spouse_you")
+                    include_you = st.checkbox("Include you for household costs", value=True, key="chk_include_you")
+                    st.session_state.include_b = include_you
+                    st.session_state.name_hint = {"A": recip or "Care Recipient", "B": your_name or "You"}
 
                 elif who == "I'm planning for my parent/parent-in-law":
-                    a_name = st.text_input("Care recipient's name", placeholder="e.g., Teresa")
-                    include_other = st.checkbox("Include the other parent for household costs?", value=True)
-                    b_name = st.text_input("Second parent's name (optional)", placeholder="e.g., Shane") if include_other else ""
-                    st.session_state.include_b = include_other
-                    st.session_state.name_hint = {"A": a_name or "Parent 1", "B": b_name or "Parent 2"}
+                    cols = st.columns(2)
+                    with cols[0]:
+                        a_name = st.text_input("Care recipient's name", placeholder="e.g., Teresa", key="name_parent_a")
+                    with cols[1]:
+                        b_name = st.text_input("Second parent's name (optional)", placeholder="e.g., Shane", key="name_parent_b")
+                    include_other = st.checkbox("Include the second parent for household costs", value=True, key="chk_include_other_parent")
+                    st.session_state.include_b = include_other and bool(b_name.strip())
+                    st.session_state.name_hint = {"A": a_name or "Parent 1", "B": (b_name or "Parent 2") if st.session_state.include_b else "Parent 2"}
 
                 elif who == "I'm planning for a couple (both parents/partners)":
-                    a_name = st.text_input("First person's name", placeholder="e.g., Teresa")
-                    b_name = st.text_input("Second person's name", placeholder="e.g., Shane")
+                    cols = st.columns(2)
+                    with cols[0]:
+                        a_name = st.text_input("First person's name", placeholder="e.g., Teresa", key="name_couple_a")
+                    with cols[1]:
+                        b_name = st.text_input("Second person's name", placeholder="e.g., Shane", key="name_couple_b")
                     st.session_state.include_b = True
                     st.session_state.name_hint = {"A": a_name or "Person 1", "B": b_name or "Person 2"}
 
                 else:
-                    a_name = st.text_input("Care recipient's name", placeholder="e.g., Mary")
-                    include_spouse = st.checkbox("Include their spouse/partner for household costs?", value=False)
-                    b_name = st.text_input("Spouse/partner name (optional)") if include_spouse else ""
-                    st.session_state.include_b = include_spouse
-                    st.session_state.name_hint = {"A": a_name or "Person A", "B": b_name or "Partner"}
+                    # Relative or friend
+                    cols = st.columns(2)
+                    with cols[0]:
+                        a_name = st.text_input("Care recipient's name", placeholder="e.g., Mary", key="name_other_a")
+                    with cols[1]:
+                        b_name = st.text_input("Spouse/partner name (optional)", placeholder="e.g., Sam", key="name_other_b")
+                    include_spouse = st.checkbox("Include the spouse/partner for household costs", value=False, key="chk_include_spouse_other")
+                    st.session_state.include_b = include_spouse and bool(b_name.strip())
+                    st.session_state.name_hint = {"A": a_name or "Person A", "B": (b_name or "Partner") if st.session_state.include_b else "Partner"}
 
                 # Location select
                 states = list(lookups.get("state_multipliers", {"National": 1.0}).keys())
                 states = (["National"] if "National" in states else []) + sorted([s for s in states if s != "National"])
                 s_idx = states.index("National") if "National" in states else 0
-                state = st.selectbox("Location for cost estimates", states, index=s_idx)
+                state = st.selectbox("Location for cost estimates", states, index=s_idx, key="sel_state")
                 st.session_state.inputs["state"] = state
 
+                # Home plan
                 st.markdown("**Home & funding approach**")
                 home_plan = st.radio("How will the home factor into paying for care?", [
                     "Keep living in the home (don't tap equity)",
                     "Sell the home (use net proceeds)",
                     "Use reverse mortgage (HECM)",
                     "Consider a HELOC (home equity line)"
-                ], index=0)
+                ], index=0, key="home_plan")
                 inp = st.session_state.inputs
                 inp["maintain_home_household"] = (home_plan == "Keep living in the home (don't tap equity)")
                 inp["home_to_assets"] = (home_plan == "Sell the home (use net proceeds)")
@@ -388,9 +396,13 @@ def main():
 
                 if inp["home_to_assets"]:
                     st.markdown("**Home sale estimate**")
-                    sell_price = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price", 0.0)), step=1000.0, format="%.2f")
-                    mortgage_payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f")
-                    fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f")
+                    cols2 = st.columns(3)
+                    with cols2[0]:
+                        sell_price = st.number_input("Estimated sale price", min_value=0.0, value=float(inp.get("sell_price", 0.0)), step=1000.0, format="%.2f", key="sell_price")
+                    with cols2[1]:
+                        mortgage_payoff = st.number_input("Est. mortgage payoff", min_value=0.0, value=float(inp.get("mortgage_payoff", 0.0)), step=1000.0, format="%.2f", key="mortgage_payoff")
+                    with cols2[2]:
+                        fees = st.number_input("Selling costs (fees, repairs, etc.)", min_value=0.0, value=float(inp.get("selling_fees", 0.0)), step=500.0, format="%.2f", key="selling_fees")
                     net = max(0.0, sell_price - mortgage_payoff - fees)
                     st.info(f"Estimated net proceeds: {mfmt(net)} (auto-added to Assets)")
                     inp.update({"sell_price": sell_price, "mortgage_payoff": mortgage_payoff, "selling_fees": fees, "home_equity": net})
@@ -435,39 +447,30 @@ def main():
                 inp[f"care_type_person_{tag_key[-1]}"] = care
                 inp[f"person_{tag_key[-1]}_in_care"] = (care != "Stay at Home (no paid care)")
 
-                # Reserve placeholders to avoid front-end mounting errors when toggling
                 hours_ph = st.empty()
                 days_ph = st.empty()
 
                 if care.startswith("In-Home Care"):
-                    # Hours
                     hours_val = int(inp.get(f"hours_per_day_person_{tag_key[-1]}", 0) or 0)
                     hours_val = max(0, min(24, hours_val))
                     with hours_ph:
-                        hours = st.slider(
-                            "Hours of paid care per day (0-24)",
-                            min_value=0, max_value=24, value=hours_val, step=1, key=f"hours_slider_{tag_key}"
-                        )
+                        hours = st.slider("Hours of paid care per day (0-24)", min_value=0, max_value=24, value=hours_val, step=1, key=f"hours_slider_{tag_key}")
                     inp[f"hours_per_day_person_{tag_key[-1]}"] = int(hours)
 
-                    # Days
                     default_days = int(spec.get("settings", {}).get("days_per_month", 30))
                     days_val = int(inp.get(f"days_per_month_person_{tag_key[-1]}", default_days) or default_days)
                     days_val = max(0, min(31, days_val))
                     with days_ph:
-                        days = st.slider(
-                            "Days of paid care per month (0-31)",
-                            min_value=0, max_value=31, value=days_val, step=1, key=f"days_slider_{tag_key}"
-                        )
+                        days = st.slider("Days of paid care per month (0-31)", min_value=0, max_value=31, value=days_val, step=1, key=f"days_slider_{tag_key}")
                     inp[f"days_per_month_person_{tag_key[-1]}"] = int(days)
 
-                    st.caption("Tip: many families start with 2-4 hours/day around 20 days/month.")
+                    st.caption("Tip: many families start with 2–4 hours/day around 20 days/month.")
 
                 elif care in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
                     room_types = list(spec.get("lookups", {}).get("room_type", {}).keys()) or ["Studio", "1 Bedroom", "Shared"]
                     room = st.selectbox("Room type", room_types, index=0, key=f"room_{tag_key}")
                     inp[f"room_type_person_{tag_key[-1]}"] = room
-                # Core selectors used in all paths
+
                 level = st.selectbox("Care level", ["Low", "Medium", "High"], index=1, key=f"level_{tag_key}")
                 inp[f"care_level_person_{tag_key[-1]}"] = level
 
@@ -530,7 +533,6 @@ def main():
                     key = f.get("field")
                     if not key:
                         continue
-                    # Hide all Person B fields if not included
                     if not st.session_state.include_b and key.endswith("_person_b"):
                         continue
 
