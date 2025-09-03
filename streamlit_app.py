@@ -1,48 +1,17 @@
 
-# streamlit_app.py — rb8: drawer stability + touched badges, home mod tiers, asset runway, wording tweak
+# streamlit_app.py — rb10: currency-friendly inputs, stable drawers, VA logic, home mods tiers,
+# asset runway calc, and wording tweak. Indentation fix applied.
 import json
 from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
+import re
 
-APP_VERSION = "v2025-09-03-rb8"
+APP_VERSION = "v2025-09-03-rb10"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
 # ---------- utils
-
-# ---------- currency parsing helpers
-import re
-def parse_currency_str(s, default=0.0):
-    if s is None:
-        return float(default)
-    if isinstance(s, (int, float)):
-        return float(s)
-    s = str(s).strip()
-    if s == "":
-        return float(default)
-    s = s.replace(",", "")
-    try:
-        return float(s)
-    except Exception:
-        try:
-            return float(default)
-        except Exception:
-            return 0.0
-
-def currency_input(label, store_name, default=0.0, drawer_name=None, help_text=None):
-    raw_key = f"{store_name}_raw"
-    existing = st.session_state.inputs.get(store_name, default)
-    # seed raw display once
-    if raw_key not in st.session_state:
-        st.session_state[raw_key] = (f"{existing:,.2f}" if existing else "")
-    raw = st.text_input(label, value=st.session_state.get(raw_key, ""), key=raw_key, help=help_text,
-                        on_change=mark_touched if drawer_name else None,
-                        args=(drawer_name,) if drawer_name else None)
-    val = parse_currency_str(raw, default=default)
-    st.session_state.inputs[store_name] = val
-    return val
-
 def money(x):
     try:
         return float(Decimal(str(x or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -60,6 +29,38 @@ def read_json(p):
         return json.loads(Path(p).read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+# ---------- currency parsing helpers
+def parse_currency_str(s, default=0.0):
+    if s is None:
+        return float(default)
+    if isinstance(s, (int, float)):
+        return float(s)
+    s = str(s).strip()
+    if s == "":
+        return float(default)
+    s = s.replace(",", "")
+    try:
+        return float(s)
+    except Exception:
+        return float(default)
+
+def currency_input(label, store_name, default=0.0, drawer_name=None, help_text=None):
+    raw_key = f"{store_name}_raw"
+    existing = st.session_state.inputs.get(store_name, default)
+    if raw_key not in st.session_state:
+        st.session_state[raw_key] = (f"{existing:,.2f}" if existing else "")
+    raw = st.text_input(
+        label,
+        value=st.session_state.get(raw_key, ""),
+        key=raw_key,
+        help=help_text,
+        on_change=mark_touched if drawer_name else None,
+        args=(drawer_name,) if drawer_name else None,
+    )
+    val = parse_currency_str(raw, default=default)
+    st.session_state.inputs[store_name] = val
+    return val
 
 # ---------- spec
 def load_spec():
@@ -260,15 +261,13 @@ def expander(name, title, amount):
 
 # ---------- home mods UI
 def home_mods_ui(inp):
-    ensure_touched_store()
-    total = 0.0
     name = "home_mods"
-    with expander(name, "Home modifications (one-time costs)", inp.get("home_mod_total", 0.0)):
+    total = float(inp.get("home_mod_total", 0.0))
+    with expander(name, "Home modifications (one-time costs)", total):
         st.caption("Pick what you expect to install, then choose a spec level or set your own number. Ranges reflect typical installs; your costs may vary.")
-
-# Contextual note when no in‑home care is selected
-if not (st.session_state.inputs.get("care_type_a","").startswith("In-Home") or st.session_state.inputs.get("care_type_b","").startswith("In-Home")):
-    st.warning("Home modification costs may not apply to your current plan because neither person has In‑Home Care selected. You can still enter estimates if you expect to modify the home for accessibility or safety.")
+        # Contextual note when no in‑home care is selected
+        if not (st.session_state.inputs.get("care_type_a","").startswith("In-Home") or st.session_state.inputs.get("care_type_b","").startswith("In-Home")):
+            st.warning("Home modification costs may not apply to your current plan because neither person has In‑Home Care selected. You can still enter estimates if you expect to modify the home for accessibility or safety.")
 
         SPEC = ["Typical", "Basic", "Custom"]
 
@@ -296,6 +295,7 @@ if not (st.session_state.inputs.get("care_type_a","").startswith("In-Home") or s
             st.caption(hint)
             return float(inp[f"hm_{key}_val"])
 
+        total = 0.0
         total += item("grab", "Grab bars and rails", "Typical installs; quantity and wall work drive costs.", 200, 500, 250)
         total += item("ramp", "Wheelchair ramps", "Length, material, and permits matter most.", 500, 3000, 1500)
         total += item("bath", "Bathroom modifications", "From grab bars to tub-to-shower conversions.", 1000, 15000, 7000)
@@ -304,15 +304,7 @@ if not (st.session_state.inputs.get("care_type_a","").startswith("In-Home") or s
 
         if st.checkbox("Other modifications", key="hm_other_chk", value=bool(inp.get("hm_other_chk", False)), on_change=mark_touched, args=(name,)):
             inp["hm_other_chk"] = True
-            inp["hm_other_val"] = st.number_input(
-                "Estimated cost — Other modifications",
-                min_value=0.0,
-                value=float(inp.get("hm_other_val", 0.0)),
-                step=50.0,
-                key="hm_other_val_num",
-                on_change=mark_touched,
-                args=(name,),
-            )
+            inp["hm_other_val"] = currency_input("Estimated cost — Other modifications", "hm_other_val", default=inp.get("hm_other_val", 0.0), drawer_name=name)
             st.text_input("Describe and enter the expected cost.", key="hm_other_desc", on_change=mark_touched, args=(name,))
             total += float(inp.get("hm_other_val", 0.0))
         else:
@@ -332,11 +324,12 @@ def main():
         st.session_state.step = 1
     if "inputs" not in st.session_state:
         st.session_state.inputs = {}
-    inp = st.session_state.inputs
     sidebar_summary()
 
     step = st.session_state.step
     st.progress(int((step - 1) / 3 * 100), text=f"Step {step} of 4")
+
+    inp = st.session_state.inputs
 
     if step == 1:
         st.header("Step 1 · Who are we planning for?")
@@ -379,12 +372,10 @@ def main():
             st.session_state.include_b = inc and bool((b or "").strip())
             st.session_state.names = {"A": a or "Person A", "B": (b or "Partner") if st.session_state.include_b else "Partner"}
 
-        # Location
         states = list(spec["lookups"]["state_multipliers"].keys())
         state = st.selectbox("Location for cost estimates", states, index=states.index("National") if "National" in states else 0, key="state_sel")
         inp["state"] = state
 
-        # Home plan (wording tweak)
         plan = st.radio(
             "How will the home factor into paying for care?",
             ["Keep the home (don't tap equity)", "Sell the home (use net proceeds)", "Use reverse mortgage (HECM)", "Consider a HELOC (home equity line)"],
@@ -396,7 +387,6 @@ def main():
         inp["expect_hecm"] = "HECM" in plan
         inp["expect_heloc"] = "HELOC" in plan
 
-        # Net proceeds if selling
         if inp["home_to_assets"]:
             st.subheader("Home sale estimate")
             c1, c2, c3 = st.columns(3)
@@ -574,7 +564,7 @@ def main():
             inp["other_assets"] = currency_input("Other assets (catch‑all)", "other_assets", default=inp.get("other_assets", 0.0), drawer_name="assets_more")
 
         # Home modifications drawer
-        hm_total = home_mods_ui(inp)
+        home_mods_ui(inp)
 
         c1, c2 = st.columns(2)
         if c1.button("← Back", key="back_to_step2"):
@@ -606,7 +596,6 @@ def main():
         liquid += float(inp.get("cash_savings", 0.0)) + float(inp.get("brokerage_taxable", 0.0)) + float(inp.get("ira_traditional", 0.0)) + float(inp.get("ira_roth", 0.0)) + float(inp.get("ira_total", 0.0)) + float(inp.get("employer_401k", 0.0)) + float(inp.get("annuity_surrender", 0.0)) + float(inp.get("cds_balance", 0.0)) + float(inp.get("employer_403b", 0.0)) + float(inp.get("employer_457b", 0.0)) + float(inp.get("ira_sep", 0.0)) + float(inp.get("ira_simple", 0.0)) + float(inp.get("life_cash_value", 0.0)) + float(inp.get("hsa_balance", 0.0)) + float(inp.get("other_assets", 0.0))
         if include_home:
             liquid += float(inp.get("home_equity", 0.0))
-        # subtract one-time home modifications
         liquid = max(0.0, liquid - float(inp.get("home_mod_total", 0.0)))
         deficit = max(0.0, res["gap"])
         if deficit <= 0.0:
