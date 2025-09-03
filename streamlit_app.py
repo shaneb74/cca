@@ -48,6 +48,8 @@ def load_spec_with_overlay(base_path: str, overlay_path: str | None = None):
             wildcard = field_ovs.get("*", {})
             for f in g.get("fields", []):
                 label = f.get("label", f["field"])
+                if gid == "group_assets" and label == "Other liquid assets":
+                    label = "Other savings & investments"
                 this_ov = field_ovs.get(label, {})
                 # wildcard defaults
                 for k, v in wildcard.items():
@@ -87,6 +89,8 @@ def apply_ui_group_answers(groups_cfg, grouped_answers, existing_fields=None):
         for f in cfg["fields"]:
             field_name = f["field"]
             label = f.get("label", f["field"])
+                if gid == "group_assets" and label == "Other liquid assets":
+                    label = "Other savings & investments"
             kind = f.get("kind", "currency")
             default = f.get("default", 0)
             raw_val = answers.get(label)
@@ -124,8 +128,24 @@ def compute(spec, inputs):
         state_mult = lookups.get("state_multipliers", {}).get(inputs.get("state", "National"), 1.0)
 
         if care_type == "In-Home Care (professional staff such as nurses, CNAs, or aides)":
-            hours = str(inputs.get(f"hours_per_day_person_{person_key}", "0"))
-            hourly = lookups.get("in_home_care_matrix", {}).get(hours, 0)
+            hours_val = int(inputs.get(f"hours_per_day_person_{person_key}", 0))
+            matrix = {int(k): v for k, v in lookups.get("in_home_care_matrix", {}).items()}
+            if hours_val in matrix:
+                hourly = matrix[hours_val]
+            else:
+                # piecewise linear interpolation between nearest keys
+                keys = sorted(matrix.keys())
+                if not keys:
+                    hourly = 0
+                else:
+                    lo = max([k for k in keys if k <= hours_val], default=keys[0])
+                    hi = min([k for k in keys if k >= hours_val], default=keys[-1])
+                    if lo == hi:
+                        hourly = matrix[lo]
+                    else:
+                        # linear interpolation
+                        frac = (hours_val - lo) / (hi - lo)
+                        hourly = matrix[lo] + frac * (matrix[hi] - matrix[lo])
             base = hourly * settings.get("days_per_month", 30)
             return money((base + mobility_home + chronic_add) * state_mult)
 
@@ -341,6 +361,9 @@ if st.session_state.step == 1:
 elif st.session_state.step == 2:
     st.header(f"Step 2 · Care plan for {st.session_state.name_hint['A']}")
     inputs = st.session_state.inputs
+    # VA spouse logic flags
+    if "va_spouse_is_b" not in st.session_state: st.session_state.va_spouse_is_b = False
+    if "va_both_vets_combined" not in st.session_state: st.session_state.va_both_vets_combined = False
 
     def render_person_care(person_key, name_label, with_paid_toggle=False):
         st.subheader(f"{name_label} — Care plan")
@@ -353,8 +376,9 @@ elif st.session_state.step == 2:
         inputs[f"care_type_person_{person_key[-1]}"] = care_type
 
         if care_type.startswith("In-Home Care"):
-            st.select_slider("Hours of care per day", options=["4","6","8","10","12","24"], value="8", key=f"hours_{person_key}", help=HELP_HOURS)
-            inputs[f"hours_per_day_person_{person_key[-1]}"] = st.session_state[f"hours_{person_key}"]
+            hours_val = st.slider("Hours of care per day", min_value=0, max_value=24, value=8, step=1, key=f"hours_{person_key}", help=HELP_HOURS)
+            st.session_state[f"hours_{person_key}"] = hours_val
+            inputs[f"hours_per_day_person_{person_key[-1]}"] = int(st.session_state[f"hours_{person_key}"])
         else:
             st.selectbox("Room type", list(spec["lookups"]["room_type"].keys()), index=0, key=f"room_{person_key}", help="Studio = lowest cost; 1BR = standard; 2BR = largest. Actual costs vary by facility.")
             inputs[f"room_type_person_{person_key[-1]}"] = st.session_state[f"room_{person_key}"]
@@ -404,8 +428,9 @@ elif st.session_state.step == 2:
             inputs["chronic_person_b"] = st.session_state["cc_person_b"]
 
         if care_b.startswith("In-Home Care"):
-            st.select_slider("Hours/day (B)", options=["4","6","8","10","12","24"], value="6", key="hours_person_b", help=HELP_HOURS)
-            inputs["hours_per_day_person_b"] = st.session_state["hours_person_b"]
+            hours_val_b = st.slider("Hours/day (B)", min_value=0, max_value=24, value=6, step=1, key="hours_person_b", help=HELP_HOURS)
+            st.session_state["hours_person_b"] = hours_val_b
+            inputs["hours_per_day_person_b"] = int(st.session_state["hours_person_b"])
         elif care_b in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
             st.selectbox("Room type (B)", list(spec["lookups"]["room_type"].keys()), index=0, key="room_person_b", help="Studio = lowest cost; 1BR = standard; 2BR = largest. Actual costs vary by facility.")
             inputs["room_type_person_b"] = st.session_state["room_person_b"]
@@ -433,6 +458,9 @@ elif st.session_state.step == 3:
     st.caption("Expand a section to enter what applies. Leave any field at 0 (or un-checked) if it doesn’t apply.")
 
     inputs = st.session_state.inputs
+    # VA spouse logic flags
+    if "va_spouse_is_b" not in st.session_state: st.session_state.va_spouse_is_b = False
+    if "va_both_vets_combined" not in st.session_state: st.session_state.va_both_vets_combined = False
     keep_home = bool(inputs.get("maintain_home_household"))
     if inputs.get("home_to_assets"):
         st.info("Home plan: **Sell the home** — Enter sale details below to compute net proceeds → Assets.")
@@ -486,6 +514,20 @@ elif st.session_state.step == 3:
                             key=f"va_amt_{gid}", disabled=True)
             if eligible and monthly:
                 st.caption(f"**VA impact:** adds **${monthly:,.0f}/mo** to income; reduces monthly gap by the same amount once calculated.")
+            # spouse logic hooks
+            if gid.endswith("_person_a"):
+                if choice == "Veteran with spouse" and st.session_state.get("include_b"):
+                    is_spouse_b = st.checkbox(f"Is {st.session_state.name_hint.get('B', 'Person B')} the spouse included in this plan?", value=True, key="va_is_spouse_b")
+                    st.session_state.va_spouse_is_b = bool(eligible and is_spouse_b)
+                    st.session_state.va_both_vets_combined = False
+                elif choice == "Two married veterans (both A&A)" and st.session_state.get("include_b"):
+                    st.info("This tier reflects the combined A&A amount for two married veterans. We’ll apply the full benefit once, and you won’t need to enter a separate VA amount for the spouse.")
+                    st.session_state.va_spouse_is_b = False
+                    st.session_state.va_both_vets_combined = bool(eligible)
+                else:
+                    st.session_state.va_spouse_is_b = False
+                    if choice != "Two married veterans (both A&A)":
+                        st.session_state.va_both_vets_combined = False
             # write into the group's VA field
             for f in g["fields"]:
                 if "VA benefit" in f.get("label",""):
@@ -529,6 +571,8 @@ elif st.session_state.step == 3:
             # Render fields
             for f in g["fields"]:
                 label = f.get("label", f["field"])
+                if gid == "group_assets" and label == "Other liquid assets":
+                    label = "Other savings & investments"
                 kind = f.get("kind", "currency")
                 default = f.get("default", 0)
                 help_txt = None
@@ -545,7 +589,7 @@ elif st.session_state.step == 3:
                 if gid == "group_optional_costs":
                     if "Home modifications" in label:
                         help_txt = HELP_HOME_MODS
-                        with st.expander("Calculate a monthly amount from a one‑time project (optional)", expanded=False):
+                        with st.expander("Calculate a monthly amount from a one‑time project (optional)", expanded=True):
                             one_time = st.number_input("One‑time modification cost ($)", min_value=0.0, value=float(st.session_state.get("hm_one_time", 0.0)), step=100.0, format="%.2f", key="hm_one_time")
                             months = st.number_input("Spread over (months)", min_value=1, value=int(st.session_state.get("hm_months", 24)), step=1, key="hm_months")
                             monthly_est = one_time / max(1, months)
@@ -596,7 +640,18 @@ elif st.session_state.step == 3:
                     continue
                 if gid.startswith("group_benefits"):
                     person_label = name_map["A"] if gid.endswith("_person_a") else name_map["B"]
-                    ans = render_benefits_group(person_label, gid)
+                    # If spouse is covered by A's tier ("veteran with spouse") or A selected the combined married-veterans tier, disable B's VA input
+            if gid.endswith("_person_b") and (st.session_state.va_spouse_is_b or st.session_state.va_both_vets_combined):
+                with st.expander(f"{groups[gid]['label'].replace('Person B', person_label)} — {groups[gid].get('prompt', '')}", expanded=False):
+                    st.info("VA is already accounted for in Person A's selection. No separate VA entry needed for the spouse.")
+                    ans = {f.get("label"): 0.0 for f in groups[gid]["fields"] if "VA benefit" in f.get("label","")}
+                    # keep LTC checkbox if present
+                    for f in groups[gid]["fields"]:
+                        if "LTC insurance" in f.get("label", ""):
+                            has = st.checkbox(f"{person_label}: Has long‑term care insurance?", value=False, key=f"ltc_{gid}")
+                            ans[f.get("label")] = has
+            else:
+                ans = render_benefits_group(person_label, gid)
                 else:
                     ans = render_group(gid, rename_map=name_map)
                 if ans is not None:
