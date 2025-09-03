@@ -5,8 +5,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 import streamlit as st
 
-APP_VERSION = "v2025-09-03-fixhours"
-st.sidebar.caption(f"App {APP_VERSION} · Streamlit {getattr(st, '__version__', 'unknown')}")
+APP_VERSION = "v2025-09-03-fixhours2"
 
 # Backward-compat: if old code calls st.experimental_rerun, alias it to st.rerun
 if not hasattr(st, "experimental_rerun") and hasattr(st, "rerun"):
@@ -266,6 +265,7 @@ def main():
     st.markdown(THEME_CSS, unsafe_allow_html=True)
     st.title(APP_TITLE)
     st.caption(APP_SUBTITLE)
+    st.sidebar.caption(f"App {APP_VERSION} · Streamlit {getattr(st, '__version__', 'unknown')}")
 
     if "step" not in st.session_state: st.session_state.step = 1
     if "inputs" not in st.session_state: st.session_state.inputs = {}
