@@ -58,5 +58,113 @@
         "note": "Enter your best estimate."
       }
     }
-  }
+  },
+  "ui_group_additions": [
+    {
+      "id": "group_assets_detail",
+      "module": "assets",
+      "label": "Assets \u2014 Detailed balances",
+      "prompt": "Enter current balances. Use totals or fill granular fields; both will roll up to the results.",
+      "fields": [
+        {
+          "field": "cash_savings",
+          "label": "Cash and savings (checking, savings, MMAs)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Liquid cash you can access now."
+        },
+        {
+          "field": "cds_balance",
+          "label": "Certificates of deposit (CDs)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "brokerage_taxable",
+          "label": "Brokerage (taxable) total",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_traditional",
+          "label": "Traditional IRA balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_roth",
+          "label": "Roth IRA balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_sep",
+          "label": "SEP IRA balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_simple",
+          "label": "SIMPLE IRA balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "ira_total",
+          "label": "IRA total (leave 0 if using the granular IRA lines above)",
+          "kind": "currency",
+          "default": 0,
+          "tooltip": "Use if you prefer a single IRA number."
+        },
+        {
+          "field": "employer_401k",
+          "label": "401(k) balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "employer_403b",
+          "label": "403(b) balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "employer_457b",
+          "label": "457(b) balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "employer_retirement_total",
+          "label": "Employer retirement total (leave 0 if entering 401k/403b/457b above)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "annuity_surrender",
+          "label": "Annuities (surrender value)",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "life_cash_value",
+          "label": "Life insurance cash value",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "hsa_balance",
+          "label": "HSA balance",
+          "kind": "currency",
+          "default": 0
+        },
+        {
+          "field": "other_assets",
+          "label": "Other assets (legacy catch\u2011all)",
+          "kind": "currency",
+          "default": 0
+        }
+      ]
+    }
+  ]
 }
