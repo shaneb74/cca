@@ -218,16 +218,23 @@ if st.session_state.step == 1:
     else:
         a_name = c1.text_input("Care recipient's name", value="") or "Person A"
         planner = c2.text_input("Your name (planner)", value="")
-        is_spouse = st.checkbox("I am the spouse/domestic partner of the care recipient")
+        # Only show the "I am the spouse..." checkbox when the selection is "My spouse/partner"
+        if who == "My spouse/partner":
+            is_spouse = st.checkbox("I am the spouse/domestic partner of the care recipient", value=True)
+        else:
+            is_spouse = False
         st.session_state.name_hint = {"A": a_name, "B": (planner or "Partner")}
-        if is_spouse:
+        if who == "My spouse/partner" and is_spouse:
+            # Planner is the spouse → include B automatically and use planner's name
             st.session_state.include_b = True
             if planner:
                 st.session_state.name_hint["B"] = planner
         else:
-            st.session_state.include_b = st.checkbox("Include spouse/partner in this plan for household costs?", value=(who == "My spouse/partner"))
+            # Otherwise, optionally include the care recipient's spouse/partner
+            st.session_state.include_b = st.checkbox("Include the care recipient’s spouse/partner in this plan for household costs?", value=False)
             if st.session_state.include_b and planner:
-                st.session_state.name_hint["B"] = planner
+                # If planner is the spouse and provided a name, use it; otherwise B will be filled later
+                st.session_state.name_hint["B"] = planner or st.session_state.name_hint["B"]
 
     states = list(lookups.get("state_multipliers", {"National":1.0}).keys())
     if "Washington" not in states:
