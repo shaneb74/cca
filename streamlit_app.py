@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb20"
+APP_VERSION = "v2025-09-03-rb21"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -54,10 +54,10 @@ def currency_input(label, store_name, default=0.0, drawer_name=None):
     existing = float(st.session_state.inputs.get(store_name, default) or 0.0)
     if raw_key not in st.session_state:
         st.session_state[raw_key] = f"{existing:,.2f}"
-    raw = st.text_input(
+    raw = st.number_input(
         label,
-        value=st.session_state.get(raw_key, ""),
-        placeholder="$0.00",
+        value=existing,
+        step=0.01,
         key=raw_key,
         help=f"Enter {label.lower()} (e.g., 1000 or 1,000).",
         on_change=mark_touched if drawer_name else None,
@@ -85,9 +85,9 @@ def load_spec():
     spec["lookups"].setdefault("care_level_adders", {"Low": 0, "Medium": 400, "High": 900})
     spec["lookups"].setdefault(
         "mobility_adders",
-        {"facility": {"Low": 0, "Medium": 150, "High": 350}, "in_home": {"Low": 0, "Medium": 100, "High": 250}},
+        {"facility": {"Gets around fine-no help": 0, "Uses cane or walker": 150, "Needs wheelchair": 350}, "in_home": {"Gets around fine-no help": 0, "Uses cane or walker": 100, "Needs wheelchair": 250}},
     )
-    spec["lookups"].setdefault("chronic_adders", {"None": 0, "Some": 150, "Multiple/Complex": 300})
+    spec["lookups"].setdefault("chronic_adders", {"None": 0, "Some (like diabetes or heart issues)": 150, "Multiple/Complex (multiple serious conditions)": 300})
     spec["lookups"].setdefault("in_home_care_matrix", {"0": 0, "2": 45, "4": 42, "6": 40, "8": 38, "12": 36, "24": 34})
     spec["lookups"].setdefault(
         "va_categories",
@@ -141,21 +141,21 @@ def calculate_care_cost(inputs, spec, tag):
         hrs = int(inputs.get(f"hours_{tag}", 4) or 4)
         days = int(inputs.get(f"days_{tag}", 20) or 20)
         lvl = inputs.get(f"care_level_{tag}", "Medium")
-        mob = inputs.get(f"mobility_{tag}", "Medium")
+        mob = inputs.get(f"mobility_{tag}", "Gets around fine-no help")
         chrk = inputs.get(f"chronic_{tag}", "None")
         base = interp(L["in_home_care_matrix"], hrs) * days
-        base += get_lookup_value(L["mobility_adders"]["in_home"], mob, 100)
+        base += get_lookup_value(L["mobility_adders"]["in_home"], mob, 0)
         base += get_lookup_value(L["chronic_adders"], chrk, 0)
         return money(base * state_mult)
 
     if ct in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
         rm = inputs.get(f"room_{tag}", "Studio")
         lvl = inputs.get(f"care_level_{tag}", "Medium")
-        mob = inputs.get(f"mobility_{tag}", "Medium")
+        mob = inputs.get(f"mobility_{tag}", "Gets around fine-no help")
         chrk = inputs.get(f"chronic_{tag}", "None")
         base = get_lookup_value(L["room_type"], rm, 4200)
         base += get_lookup_value(L["care_level_adders"], lvl, 400)
-        base += get_lookup_value(L["mobility_adders"]["facility"], mob, 150)
+        base += get_lookup_value(L["mobility_adders"]["facility"], mob, 0)
         base += get_lookup_value(L["chronic_adders"], chrk, 0)
         if ct == "Memory Care":
             base *= float(S["memory_care_multiplier"])
@@ -257,7 +257,7 @@ def calculate_assets(inputs, spec):
         f["field"] for group in spec.get("ui_group_additions", []) for f in group["fields"] if group["id"] in ["group_assets_common", "group_assets_more"]
     ]
     liquid = money(sum(float(inputs.get(k, 0.0)) for k in asset_keys))
-    if inputs.get("home_to_assets", False):
+    if inputs.get("sell_home", False):
         liquid += float(inputs.get("home_equity", 0.0))
     liquid = max(0.0, liquid - float(inputs.get("home_modifications_monthly", 0.0) * 12))
     return liquid
@@ -306,19 +306,28 @@ def expander(drawer, title, preview_val=0.0):
         return st.container()
 
 def home_mods_ui(inp, spec):
-    """Render UI for home modifications."""
-    with expander("home_mods", "Home modifications (optional)", inp.get("home_modifications_monthly", 0.0)):
-        grab_bars = spec["lookups"].get("home_mod_specs", {}).get("grab_bars", {})
-        inp["grab_bars"] = st.slider(
-            grab_bars.get("label", "Grab bars and rails"),
-            min_value=float(grab_bars.get("min", 0)),
-            max_value=float(grab_bars.get("max", 500)),
-            value=float(inp.get("grab_bars", grab_bars.get("avg", 250))),
-            step=float(grab_bars.get("step", 25)),
-            help=grab_bars.get("note", ""),
-            key="grab_bars",
-        )
-        inp["home_modifications_monthly"] = money(inp.get("grab_bars", 0) / 12)
+    """Render UI for home modifications with multiple options."""
+    with expander("Home modifications (optional)", inp.get("home_modifications_monthly", 0.0)):
+        mods = {
+            "grab_bars": {"label": "Grab bars and rails", "min": 200, "max": 500, "avg": 250, "step": 25, "lifespan": 12, "note": "Typical: $200–$500 • Spread over 1 year"},
+            "stair_lift": {"label": "Stair lift install", "min": 2000, "max": 10000, "avg": 5000, "step": 500, "lifespan": 24, "note": "Typical: $2,000–$10,000 • Spread over 2 years"},
+            "ramp": {"label": "Wheelchair ramp", "min": 1000, "max": 5000, "avg": 2500, "step": 250, "lifespan": 24, "note": "Typical: $1,000–$5,000 • Spread over 2 years"},
+            "widened_doors": {"label": "Widened doorways", "min": 1500, "max": 7500, "avg": 4000, "step": 500, "lifespan": 24, "note": "Typical: $1,500–$7,500 • Spread over 2 years"},
+        }
+        total_mods = 0.0
+        for mod_id, mod in mods.items():
+            val = st.slider(
+                mod["label"],
+                min_value=float(mod["min"]),
+                max_value=float(mod["max"]),
+                value=float(inp.get(mod_id, mod["avg"])),
+                step=float(mod["step"]),
+                help=mod["note"],
+                key=mod_id,
+            )
+            inp[mod_id] = money(val)
+            total_mods += money(val / mod["lifespan"])
+        inp["home_modifications_monthly"] = total_mods
 
 # ---------- main
 def main():
@@ -379,6 +388,9 @@ def main():
             "hsa_balance": 0.0,
             "other_assets": 0.0,
             "grab_bars": 0.0,
+            "stair_lift": 0.0,
+            "ramp": 0.0,
+            "widened_doors": 0.0,
         }
     if "touched" not in st.session_state:
         st.session_state.touched = set()
@@ -393,16 +405,6 @@ def main():
     # Progress bar
     st.progress(st.session_state.step / 4, text=f"Step {st.session_state.step} of 4")
 
-    # Sidebar: Help resources
-    with st.sidebar:
-        st.header("Help & Resources")
-        st.markdown("""
-        - [VA Aid & Attendance](https://www.va.gov/pension/aid-attendance-housebound/)
-        - [Medicare Information](https://www.medicare.gov/)
-        - [FAQ: Understanding Care Costs](https://www.aarp.org/caregiving/financial-legal/)
-        """)
-        st.markdown(f"App {APP_VERSION}")
-
     spec = load_spec()
     inp = st.session_state.inputs
     names = st.session_state.names
@@ -415,28 +417,44 @@ def main():
             help="Select who this plan is for to personalize the experience."
         )
         if audience == "Myself":
-            names["A"] = st.text_input("Your name", value=names.get("A", "Me"), help="Enter your name.")
-            has_spouse = st.checkbox("Is there a spouse or partner you'd want to plan for too? Sometimes care for one changes life for both.", value=st.session_state.get("has_spouse", False))
-            if has_spouse:
+            names["A"] = st.text_input("Awesome-so you're planning for yourself. What's your name?", value=names.get("A", "Me"), help="Enter your name.")
+            col1, col2 = st.columns(2)
+            if col1.button("Yes, plan for my spouse"):
                 names["B"] = st.text_input("What's their name?", value=names.get("B", "Spouse"), help="Enter your spouse or partner's name.")
                 st.session_state.include_b = True
+            if col2.button("No, just me"):
+                st.session_state.include_b = False
         elif audience == "One parent":
             names["A"] = st.text_input("Awesome-so you're planning for one parent. What's their name?", value=names.get("A", "Mom"), help="Enter your parent's name.")
-            has_spouse = st.checkbox("Are they still sharing the home with someone—like a spouse or partner?", value=st.session_state.get("has_spouse", False))
-            if has_spouse:
+            col1, col2 = st.columns(2)
+            if col1.button("Yes, include a spouse"):
                 names["B"] = st.text_input("What's their name? We'll walk you through both.", value=names.get("B", "Spouse"), help="Enter the spouse or partner's name.")
                 st.session_state.include_b = True
+            if col2.button("No, no spouse"):
+                st.session_state.include_b = False
         elif audience == "Both parents":
             names["A"] = st.text_input("Awesome-so you're planning for both parents. What's the first parent's name?", value=names.get("A", "Mom"), help="Enter the first parent's name.")
             names["B"] = st.text_input("What's the second parent's name?", value=names.get("B", "Dad"), help="Enter the second parent's name.")
             st.session_state.include_b = True
         else:  # Loved one or family member
             names["A"] = st.text_input("Awesome-so you're planning for a loved one or family member. What's their name?", value=names.get("A", "Loved One"), help="Enter the loved one or family member's name.")
-            has_spouse = st.checkbox("Is a spouse or partner living with them? Sometimes one person's care changes everything for the other.", value=st.session_state.get("has_spouse", False))
-            if has_spouse:
+            col1, col2 = st.columns(2)
+            if col1.button("Yes, include a spouse or partner"):
                 names["B"] = st.text_input("What's their name? We'll walk you through both.", value=names.get("B", "Partner"), help="Enter the spouse or partner's name.")
                 st.session_state.include_b = True
-        inp["maintain_home"] = st.checkbox("Got it—so if you're keeping their place while they're away, we'll roll in mortgage, bills, everything. Yes, include home costs.", value=inp.get("maintain_home", False))
+            if col2.button("No, no spouse or partner"):
+                st.session_state.include_b = False
+        col1, col2 = st.columns(2)
+        if col1.button("Yes, keep the home"):
+            inp["maintain_home"] = True
+        if col2.button("No, not keeping it"):
+            inp["maintain_home"] = False
+        if inp["maintain_home"]:
+            col1, col2 = st.columns(2)
+            if col1.button("Yes, plan to sell"):
+                inp["sell_home"] = True
+            if col2.button("No, keep it"):
+                inp["sell_home"] = False
         inp["state"] = st.selectbox("Care costs—like room rates or hourly help—can vary a ton by state. So, where will this be happening?", list(spec["lookups"]["state_multipliers"].keys()), index=0)
         if st.button("Next →", type="primary", use_container_width=True):
             st.session_state.step = 2
@@ -446,37 +464,34 @@ def main():
         st.header(f"Care needs for {names['A']}")
         st.markdown(f"We'll handle {names.get('B', 'their partner')}’s right after—just focus here first.")
         care_types = ["In-Home Care", "Assisted Living (or Adult Family Home)", "Memory Care", "None"]
-        inp[f"care_type_a"] = st.selectbox(f"Care type for {names['A']}", care_types, index=care_types.index(inp.get(f"care_type_a", "None")))
+        inp[f"care_type_a"] = st.selectbox(f"Care type for {names['A']}", care_types, index=care_types.index(inp.get(f"care_type_a", "None")), help="Select the care level needed.")
         if inp[f"care_type_a"].startswith("In-Home"):
             inp[f"hours_a"] = st.slider(f"Daily hours for {names['A']}", 0, 24, int(inp.get(f"hours_a", 4)), help="Estimate hours of care needed per day.")
             inp[f"days_a"] = st.slider(f"Days per month for {names['A']}", 0, 30, int(inp.get(f"days_a", 20)), help="Estimate days per month for care.")
-            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
+            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']} (Low: occasional checks, meals/meds; Medium: daily help, bathing; High: full-time care)", ["Low", "Medium", "High"], index=1)
+            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']} (Gets around fine-no help; Uses cane or walker; Needs wheelchair)", ["Gets around fine-no help", "Uses cane or walker", "Needs wheelchair"], index=0)
+            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']} (None; Some: like diabetes or heart issues; Multiple/Complex: multiple serious conditions)", ["None", "Some (like diabetes or heart issues)", "Multiple/Complex (multiple serious conditions)"], index=0)
         elif inp[f"care_type_a"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
             inp[f"room_a"] = st.selectbox(f"Room type for {names['A']}", ["Studio", "1 Bedroom", "Shared"], index=0)
-            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
+            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']} (Low: occasional checks, meals/meds; Medium: daily help, bathing; High: full-time care)", ["Low", "Medium", "High"], index=1)
+            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']} (Gets around fine-no help; Uses cane or walker; Needs wheelchair)", ["Gets around fine-no help", "Uses cane or walker", "Needs wheelchair"], index=0)
+            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']} (None; Some: like diabetes or heart issues; Multiple/Complex: multiple serious conditions)", ["None", "Some (like diabetes or heart issues)", "Multiple/Complex (multiple serious conditions)"], index=0)
 
         if st.session_state.get("include_b", False):
             st.markdown("---")
             st.header(f"Now—care needs for {names['B']}")
-            second_person_options = ["Staying home alone", "Needs in-home help", "Maybe assisted living?", "Same as " + names["A"], "He's okay, no change"]
-            inp["second_person_status"] = st.selectbox(f"{names['B']}'s situation", second_person_options, index=0)
-            if inp["second_person_status"] != "He's okay, no change":
-                inp[f"care_type_b"] = st.selectbox(f"Care type for {names['B']}", care_types, index=care_types.index(inp.get(f"care_type_b", "None")))
-                if inp[f"care_type_b"].startswith("In-Home"):
-                    inp[f"hours_b"] = st.slider(f"Daily hours for {names['B']}", 0, 24, int(inp.get(f"hours_b", 4)), help="Estimate hours of care needed per day.")
-                    inp[f"days_b"] = st.slider(f"Days per month for {names['B']}", 0, 30, int(inp.get(f"days_b", 20)), help="Estimate days per month for care.")
-                    inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
-                    inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
-                    inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
-                elif inp[f"care_type_b"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
-                    inp[f"room_b"] = st.selectbox(f"Room type for {names['B']}", ["Studio", "1 Bedroom", "Shared"], index=0)
-                    inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
-                    inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
-                    inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
+            inp[f"care_type_b"] = st.selectbox(f"Care type for {names['B']}", care_types, index=care_types.index(inp.get(f"care_type_b", "None")), help="Select the care level needed.")
+            if inp[f"care_type_b"].startswith("In-Home"):
+                inp[f"hours_b"] = st.slider(f"Daily hours for {names['B']}", 0, 24, int(inp.get(f"hours_b", 4)), help="Estimate hours of care needed per day.")
+                inp[f"days_b"] = st.slider(f"Days per month for {names['B']}", 0, 30, int(inp.get(f"days_b", 20)), help="Estimate days per month for care.")
+                inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']} (Low: occasional checks, meals/meds; Medium: daily help, bathing; High: full-time care)", ["Low", "Medium", "High"], index=1)
+                inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']} (Gets around fine-no help; Uses cane or walker; Needs wheelchair)", ["Gets around fine-no help", "Uses cane or walker", "Needs wheelchair"], index=0)
+                inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']} (None; Some: like diabetes or heart issues; Multiple/Complex: multiple serious conditions)", ["None", "Some (like diabetes or heart issues)", "Multiple/Complex (multiple serious conditions)"], index=0)
+            elif inp[f"care_type_b"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
+                inp[f"room_b"] = st.selectbox(f"Room type for {names['B']}", ["Studio", "1 Bedroom", "Shared"], index=0)
+                inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']} (Low: occasional checks, meals/meds; Medium: daily help, bathing; High: full-time care)", ["Low", "Medium", "High"], index=1)
+                inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']} (Gets around fine-no help; Uses cane or walker; Needs wheelchair)", ["Gets around fine-no help", "Uses cane or walker", "Needs wheelchair"], index=0)
+                inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']} (None; Some: like diabetes or heart issues; Multiple/Complex: multiple serious conditions)", ["None", "Some (like diabetes or heart issues)", "Multiple/Complex (multiple serious conditions)"], index=0)
 
         c1, c2 = st.columns(2)
         if c1.button("← Back", use_container_width=True):
@@ -492,7 +507,7 @@ def main():
             with expander(f"Income — {names['A']}", inp.get("social_security_person_a", 0.0) + inp.get("pension_person_a", 0.0)):
                 inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name=f"income_{names['A']}")
                 inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name=f"income_{names['A']}")
-            if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
+            if st.session_state.get("include_b", False):
                 with expander(f"Income — {names['B']}", inp.get("social_security_person_b", 0.0) + inp.get("pension_person_b", 0.0)):
                     inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name=f"income_{names['B']}")
                     inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name=f"income_{names['B']}")
@@ -506,15 +521,15 @@ def main():
                 inp["ltc_insurance_person_a"] = ltc_a_on
                 if ltc_a_on:
                     inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits")
-                if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
+                if st.session_state.get("include_b", False):
                     inp["va_cat_b"] = st.selectbox(f"VA status — {names['B']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
                     inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits")
                     ltc_b_on = st.checkbox(f"{names['B']} has LTC policy", value=bool(inp.get("ltc_insurance_person_b", False)), key=f"ltc_insurance_person_b_{names['B']}", on_change=mark_touched, args=("benefits",))
                     inp["ltc_insurance_person_b"] = ltc_b_on
                     if ltc_b_on:
                         inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits")
+                st.markdown(f"[Check Aid & Attendance eligibility](https://www.va.gov/pension/aid-attendance-housebound/)")
             with expander("Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
-                inp["maintain_home"] = st.checkbox("Keep home", value=inp.get("maintain_home", False))
                 if inp["maintain_home"]:
                     try:
                         for f in spec["ui_groups"][3]["fields"]:
@@ -534,7 +549,6 @@ def main():
                 for f in spec.get("ui_group_additions", [])[2]["fields"]:
                     inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more")
             home_mods_ui(inp, spec)
-            inp["home_to_assets"] = st.checkbox("Include home equity in liquid assets", value=inp.get("home_to_assets", False), help="Check if you plan to sell or access home equity.")
         except Exception as e:
             st.error(f"Error in Step 3: {str(e)}")
             st.write("Please check the schema files and try again.")
@@ -559,7 +573,7 @@ def main():
             st.metric("Monthly Gap", mfmt(res["gap"]))
         with c3:
             st.metric(f"VA Benefit — {names['A']}", mfmt(res["va_a"]))
-            if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
+            if st.session_state.get("include_b", False):
                 st.metric(f"VA Benefit — {names['B']}", mfmt(res["va_b"]))
         if res["gap"] <= 0.0:
             st.success("No deficit. Your monthly income covers the planned costs, so assets are not needed for ongoing expenses.")
