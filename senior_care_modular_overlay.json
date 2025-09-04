@@ -33,7 +33,7 @@
       "id": "group_assets_common",
       "module": "assets",
       "label": "Assets — Common balances",
-      "prompt": "Enter typical balances. Withdrawals belong in Income, not here.",
+      "prompt": "Enter typical balances. Withdrawals belong in Income.",
       "fields": [
         {"field":"cash_savings","label":"Cash and savings (checking, savings, MMAs)","kind":"currency","default":0},
         {"field":"brokerage_taxable","label":"Brokerage (taxable) total","kind":"currency","default":0},

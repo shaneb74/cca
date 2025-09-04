@@ -131,13 +131,13 @@
           "field": "ltc_insurance_person_a",
           "label": "Long-Term Care insurance — Person A",
           "kind": "boolean",
-          "default": "No"
+          "default": false
         },
         {
           "field": "ltc_insurance_person_b",
           "label": "Long-Term Care insurance — Person B",
           "kind": "boolean",
-          "default": "No"
+          "default": false
         }
       ]
     },

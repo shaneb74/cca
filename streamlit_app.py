@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb13-no-reportlab-no-css"
+APP_VERSION = "v2025-09-03-rb14"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -28,7 +28,7 @@ def read_json(p):
     try:
         return json.loads(Path(p).read_text(encoding="utf-8"))
     except Exception:
-        st.warning(f"Failed to load {p}. Using defaults.")
+        st.error(f"Failed to load {p}. Please check the file.")
         return {}
 
 # ---------- currency parsing helpers
@@ -42,34 +42,24 @@ def parse_currency_str(s, default=0.0):
     if s == "":
         return float(default)
     try:
-        val = float(s)
-        return val
+        return float(s)
     except Exception:
         st.error("Invalid currency input. Please enter a number (e.g., 1000 or 1,000).")
         return float(default)
 
-def currency_input(label, store_name, default=0.0, drawer_name=None, help_text=None):
+def currency_input(label, store_name, default=0.0, drawer_name=None):
     """Render currency input with placeholder and validation."""
     raw_key = f"{store_name}_raw"
-    # Ensure default is a float
-    try:
-        default = float(default)
-    except (TypeError, ValueError):
-        default = 0.0
-    # Get existing value, ensuring it's a float
-    existing = st.session_state.inputs.get(store_name, default)
-    try:
-        existing = float(existing)
-    except (TypeError, ValueError):
-        existing = default
+    default = float(default or 0.0)
+    existing = float(st.session_state.inputs.get(store_name, default) or 0.0)
     if raw_key not in st.session_state:
-        st.session_state[raw_key] = f"{existing:,.2f}" if existing else ""
+        st.session_state[raw_key] = f"{existing:,.2f}"
     raw = st.text_input(
         label,
         value=st.session_state.get(raw_key, ""),
         placeholder="$0.00",
         key=raw_key,
-        help=help_text,
+        help=f"Enter {label.lower()} (e.g., 1000 or 1,000).",
         on_change=mark_touched if drawer_name else None,
         args=(drawer_name,) if drawer_name else None,
     )
@@ -89,6 +79,31 @@ def load_spec():
         spec.setdefault("ui_group_additions", []).extend(ov.get("ui_group_additions", []))
         if "ui_group_overrides" in ov:
             spec.setdefault("ui_group_overrides", {}).update(ov["ui_group_overrides"])
+    spec.setdefault("lookups", {})
+    spec["lookups"].setdefault("state_multipliers", {"National": 1.0})
+    spec["lookups"].setdefault("room_type", {"Studio": 4200, "1 Bedroom": 5200, "Shared": 3800})
+    spec["lookups"].setdefault("care_level_adders", {"Low": 0, "Medium": 400, "High": 900})
+    spec["lookups"].setdefault(
+        "mobility_adders",
+        {"facility": {"Low": 0, "Medium": 150, "High": 350}, "in_home": {"Low": 0, "Medium": 100, "High": 250}},
+    )
+    spec["lookups"].setdefault("chronic_adders", {"None": 0, "Some": 150, "Multiple/Complex": 300})
+    spec["lookups"].setdefault("in_home_care_matrix", {"0": 0, "2": 45, "4": 42, "6": 40, "8": 38, "12": 36, "24": 34})
+    spec["lookups"].setdefault(
+        "va_categories",
+        {
+            "None": 0.0,
+            "Veteran only (A&A)": 2358.33,
+            "Veteran with spouse (A&A)": 2795.67,
+            "Two veterans married, both A&A (household ceiling)": 3740.50,
+            "Surviving spouse (A&A)": 1515.58,
+        },
+    )
+    spec.setdefault("settings", {})
+    spec["settings"].setdefault("memory_care_multiplier", 1.25)
+    spec["settings"].setdefault("second_person_cost", 1200.0)
+    spec["settings"].setdefault("ltc_monthly_add", 1800.0)
+    spec["settings"].setdefault("display_cap_years_funded", 30)
     return spec
 
 def interp(matrix, h):
@@ -152,52 +167,53 @@ def calculate_home_costs(inputs):
     """Calculate total home maintenance costs if keeping home."""
     if not inputs.get("maintain_home", False):
         return 0.0
-    return money(sum(
-        float(inputs.get(k, 0.0))
-        for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"]
-    ))
+    return money(sum(float(inputs.get(k, 0.0)) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"]))
 
 def calculate_optional_costs(inputs):
     """Calculate total optional monthly costs."""
-    return money(sum(
-        float(inputs.get(k, 0.0))
-        for k in [
-            "medicare_premiums",
-            "dental_vision_hearing",
-            "home_modifications_monthly",
-            "other_debts_monthly",
-            "pet_care",
-            "entertainment_hobbies",
-            "optional_rx",
-            "optional_personal_care",
-            "optional_phone_internet",
-            "optional_life_insurance",
-            "optional_new_car",
-            "optional_auto",
-            "optional_auto_insurance",
-            "optional_other",
-            "heloc_payment_monthly",
-        ]
-    ))
+    return money(
+        sum(
+            float(inputs.get(k, 0.0))
+            for k in [
+                "medicare_premiums",
+                "dental_vision_hearing",
+                "home_modifications_monthly",
+                "other_debts_monthly",
+                "pet_care",
+                "entertainment_hobbies",
+                "optional_rx",
+                "optional_personal_care",
+                "optional_phone_internet",
+                "optional_life_insurance",
+                "optional_new_car",
+                "optional_auto",
+                "optional_auto_insurance",
+                "optional_other",
+                "heloc_payment_monthly",
+            ]
+        )
+    )
 
 def calculate_income(inputs):
     """Calculate total household income."""
-    return money(sum(
-        float(inputs.get(k, 0.0))
-        for k in [
-            "social_security_person_a",
-            "pension_person_a",
-            "social_security_person_b",
-            "pension_person_b",
-            "rental_income",
-            "wages_part_time",
-            "alimony_support",
-            "dividends_interest",
-            "other_income_monthly",
-            "ltc_insurance_person_a_monthly",
-            "ltc_insurance_person_b_monthly",
-        ]
-    ))
+    return money(
+        sum(
+            float(inputs.get(k, 0.0))
+            for k in [
+                "social_security_person_a",
+                "pension_person_a",
+                "social_security_person_b",
+                "pension_person_b",
+                "rental_income",
+                "wages_part_time",
+                "alimony_support",
+                "dividends_interest",
+                "other_income_monthly",
+                "ltc_insurance_person_a_monthly",
+                "ltc_insurance_person_b_monthly",
+            ]
+        )
+    )
 
 def calculate_va_benefits(inputs, spec, care_cost):
     """Calculate VA benefits for Person A and B."""
@@ -205,15 +221,13 @@ def calculate_va_benefits(inputs, spec, care_cost):
     cat_a = inputs.get("va_cat_a", "None")
     cat_b = inputs.get("va_cat_b", "None")
     medical = money(
-        care_cost +
-        float(inputs.get("medicare_premiums", 0)) +
-        float(inputs.get("dental_vision_hearing", 0)) +
-        float(inputs.get("optional_rx", 0)) +
-        float(inputs.get("optional_personal_care", 0))
+        care_cost
+        + float(inputs.get("medicare_premiums", 0))
+        + float(inputs.get("dental_vision_hearing", 0))
+        + float(inputs.get("optional_rx", 0))
+        + float(inputs.get("optional_personal_care", 0))
     )
     income = calculate_income(inputs)
-    
-    # Determine MAPR based on VA categories
     mapr = get_lookup_value(L["va_categories"], "None")
     if "Two veterans" in cat_a or "Two veterans" in cat_b:
         mapr = get_lookup_value(L["va_categories"], "Two veterans married, both A&A (household ceiling)")
@@ -227,7 +241,6 @@ def calculate_va_benefits(inputs, spec, care_cost):
         mapr = get_lookup_value(L["va_categories"], "Surviving spouse (A&A)")
     elif "Surviving spouse" in cat_b:
         mapr = get_lookup_value(L["va_categories"], "Surviving spouse (A&A)")
-
     va_month = money(max(0.0, mapr * 12 - max(0.0, income * 12 - medical * 12)) / 12.0)
     if "Two veterans" in cat_a or "Two veterans" in cat_b:
         va_a = money(va_month / 2)
@@ -235,15 +248,13 @@ def calculate_va_benefits(inputs, spec, care_cost):
     else:
         va_a = money(va_month if "Veteran" in cat_a or "Surviving spouse" in cat_a else 0.0)
         va_b = money(va_month if "Veteran" in cat_b or "Surviving spouse" in cat_b else 0.0)
-    
     return va_a, va_b
 
 def calculate_assets(inputs, spec):
-    """Calculate total liquid assets and years funded."""
+    """Calculate total liquid assets."""
     S = spec["settings"]
     asset_keys = [
-        f["field"] for group in spec.get("ui_group_additions", [])
-        for f in group["fields"] if group["id"] in ["group_assets_common", "group_assets_more"]
+        f["field"] for group in spec.get("ui_group_additions", []) for f in group["fields"] if group["id"] in ["group_assets_common", "group_assets_more"]
     ]
     liquid = money(sum(float(inputs.get(k, 0.0)) for k in asset_keys))
     if inputs.get("home_to_assets", False):
@@ -255,8 +266,6 @@ def compute(inputs, spec):
     """Compute all financial metrics for the care plan."""
     care_a = calculate_care_cost(inputs, spec, "a")
     care_b = calculate_care_cost(inputs, spec, "b")
-    
-    # Apply second-person discount
     S = spec["settings"]
     state_mult = get_lookup_value(spec["lookups"]["state_multipliers"], inputs.get("state", "National"), 1.0)
     disc = money(
@@ -266,18 +275,14 @@ def compute(inputs, spec):
         else 0.0
     )
     care = money(care_a + care_b - disc)
-    
     home = calculate_home_costs(inputs)
     opt = calculate_optional_costs(inputs)
     month_cost = money(care + home + opt)
-    
     income = calculate_income(inputs)
     va_a, va_b = calculate_va_benefits(inputs, spec, care)
     gap = money(max(0.0, month_cost - (income + va_a + va_b)))
-    
     liquid = calculate_assets(inputs, spec)
     years = liquid / (gap * 12.0) if gap > 0 else float("inf")
-    
     return {
         "care": care,
         "month_cost": month_cost,
@@ -321,7 +326,60 @@ def main():
     if "step" not in st.session_state:
         st.session_state.step = 1
     if "inputs" not in st.session_state:
-        st.session_state.inputs = {}
+        st.session_state.inputs = {
+            "social_security_person_a": 0.0,
+            "pension_person_a": 0.0,
+            "social_security_person_b": 0.0,
+            "pension_person_b": 0.0,
+            "rental_income": 0.0,
+            "wages_part_time": 0.0,
+            "alimony_support": 0.0,
+            "dividends_interest": 0.0,
+            "other_income_monthly": 0.0,
+            "va_benefit_person_a": 0.0,
+            "va_benefit_person_b": 0.0,
+            "ltc_insurance_person_a": False,
+            "ltc_insurance_person_b": False,
+            "ltc_insurance_person_a_monthly": 0.0,
+            "ltc_insurance_person_b_monthly": 0.0,
+            "mortgage": 0.0,
+            "taxes": 0.0,
+            "insurance": 0.0,
+            "hoa": 0.0,
+            "utilities": 0.0,
+            "medicare_premiums": 0.0,
+            "dental_vision_hearing": 0.0,
+            "home_modifications_monthly": 0.0,
+            "other_debts_monthly": 0.0,
+            "pet_care": 0.0,
+            "entertainment_hobbies": 0.0,
+            "optional_rx": 0.0,
+            "optional_personal_care": 0.0,
+            "optional_phone_internet": 0.0,
+            "optional_life_insurance": 0.0,
+            "optional_new_car": 0.0,
+            "optional_auto": 0.0,
+            "optional_auto_insurance": 0.0,
+            "optional_other": 0.0,
+            "heloc_payment_monthly": 0.0,
+            "cash_savings": 0.0,
+            "brokerage_taxable": 0.0,
+            "ira_traditional": 0.0,
+            "ira_roth": 0.0,
+            "ira_total": 0.0,
+            "employer_401k": 0.0,
+            "home_equity": 0.0,
+            "annuity_surrender": 0.0,
+            "cds_balance": 0.0,
+            "employer_403b": 0.0,
+            "employer_457b": 0.0,
+            "ira_sep": 0.0,
+            "ira_simple": 0.0,
+            "life_cash_value": 0.0,
+            "hsa_balance": 0.0,
+            "other_assets": 0.0,
+            "grab_bars": 0.0,
+        }
     if "touched" not in st.session_state:
         st.session_state.touched = set()
     if "names" not in st.session_state:
@@ -401,49 +459,49 @@ def main():
         st.header("Step 3 · Finances")
         try:
             with expander("income_a", f"Income — {names['A']}", inp.get("social_security_person_a", 0.0) + inp.get("pension_person_a", 0.0)):
-                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name="income_a", help_text="Enter monthly Social Security income.")
-                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name="income_a", help_text="Enter monthly pension income.")
+                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name="income_a")
+                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name="income_a")
             if st.session_state.get("include_b", False):
                 with expander("income_b", f"Income — {names['B']}", inp.get("social_security_person_b", 0.0) + inp.get("pension_person_b", 0.0)):
-                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name="income_b", help_text="Enter monthly Social Security income.")
-                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name="income_b", help_text="Enter monthly pension income.")
+                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name="income_b")
+                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name="income_b")
             with expander("income_household", "Income — Household", sum(inp.get(k, 0.0) for k in ["rental_income", "wages_part_time", "alimony_support", "dividends_interest", "other_income_monthly"])):
                 for f in spec.get("ui_group_additions", [])[0]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="income_household", help_text=f.get("help", f["prompt"]))
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="income_household")
             with expander("benefits", "Benefits", inp.get("va_benefit_person_a", 0.0) + inp.get("va_benefit_person_b", 0.0)):
                 inp["va_cat_a"] = st.selectbox(f"VA status — {names['A']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
-                inp["va_benefit_person_a"] = currency_input(f"VA benefit — {names['A']}", "va_benefit_person_a", default=inp.get("va_benefit_person_a", 0.0), drawer_name="benefits", help_text="Enter monthly VA benefit.")
+                inp["va_benefit_person_a"] = currency_input(f"VA benefit — {names['A']}", "va_benefit_person_a", default=inp.get("va_benefit_person_a", 0.0), drawer_name="benefits")
                 ltc_a_on = st.checkbox(f"{names['A']} has LTC policy", value=bool(inp.get("ltc_insurance_person_a", False)), key="ltc_insurance_person_a", on_change=mark_touched, args=("benefits",))
                 inp["ltc_insurance_person_a"] = ltc_a_on
                 if ltc_a_on:
-                    inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits", help_text="Enter monthly LTC benefit.")
+                    inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits")
                 if st.session_state.get("include_b", False):
                     inp["va_cat_b"] = st.selectbox(f"VA status — {names['B']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
-                    inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits", help_text="Enter monthly VA benefit.")
+                    inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits")
                     ltc_b_on = st.checkbox(f"{names['B']} has LTC policy", value=bool(inp.get("ltc_insurance_person_b", False)), key="ltc_insurance_person_b", on_change=mark_touched, args=("benefits",))
                     inp["ltc_insurance_person_b"] = ltc_b_on
                     if ltc_b_on:
-                        inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits", help_text="Enter monthly LTC benefit.")
+                        inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits")
             with expander("home_carry", "Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
                 inp["maintain_home"] = st.checkbox("Keep home", value=inp.get("maintain_home", False))
                 if inp["maintain_home"]:
                     try:
                         for f in spec["ui_groups"][3]["fields"]:
-                            inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry", help_text="Enter monthly cost.")
+                            inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry")
                     except Exception as e:
                         st.error(f"Error rendering home costs: {str(e)}")
             with expander("optional", "Other monthly costs (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec["ui_groups"][4]["fields"]])):
                 try:
                     for f in spec["ui_groups"][4]["fields"]:
-                        inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional", help_text="Leave at 0 if not applicable.")
-                except Exception as e:
-                    st.error(f"Error rendering optional costs: {str(e)}")
+                        inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional")
+                    except Exception as e:
+                        st.error(f"Error rendering optional costs: {str(e)}")
             with expander("assets_common", "Assets — Common balances", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[1]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[1]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common", help_text="Enter current balance.")
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common")
             with expander("assets_more", "More asset types (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[2]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[2]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more", help_text="Enter current balance or leave at 0.")
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more")
             home_mods_ui(inp, spec)
             inp["home_to_assets"] = st.checkbox("Include home equity in liquid assets", value=inp.get("home_to_assets", False), help="Check if you plan to sell or access home equity.")
         except Exception as e:
