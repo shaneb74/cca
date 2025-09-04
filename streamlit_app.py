@@ -401,49 +401,49 @@ def main():
         st.header("Step 3 · Finances")
         try:
             with expander("income_a", f"Income — {names['A']}", inp.get("social_security_person_a", 0.0) + inp.get("pension_person_a", 0.0)):
-                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name="income_a", help="Enter monthly Social Security income.")
-                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name="income_a", help="Enter monthly pension income.")
+                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name="income_a", help_text="Enter monthly Social Security income.")
+                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name="income_a", help_text="Enter monthly pension income.")
             if st.session_state.get("include_b", False):
                 with expander("income_b", f"Income — {names['B']}", inp.get("social_security_person_b", 0.0) + inp.get("pension_person_b", 0.0)):
-                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name="income_b", help="Enter monthly Social Security income.")
-                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name="income_b", help="Enter monthly pension income.")
+                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name="income_b", help_text="Enter monthly Social Security income.")
+                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name="income_b", help_text="Enter monthly pension income.")
             with expander("income_household", "Income — Household", sum(inp.get(k, 0.0) for k in ["rental_income", "wages_part_time", "alimony_support", "dividends_interest", "other_income_monthly"])):
                 for f in spec.get("ui_group_additions", [])[0]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="income_household", help=f.get("help", f["prompt"]))
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="income_household", help_text=f.get("help", f["prompt"]))
             with expander("benefits", "Benefits", inp.get("va_benefit_person_a", 0.0) + inp.get("va_benefit_person_b", 0.0)):
                 inp["va_cat_a"] = st.selectbox(f"VA status — {names['A']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
-                inp["va_benefit_person_a"] = currency_input(f"VA benefit — {names['A']}", "va_benefit_person_a", default=inp.get("va_benefit_person_a", 0.0), drawer_name="benefits")
+                inp["va_benefit_person_a"] = currency_input(f"VA benefit — {names['A']}", "va_benefit_person_a", default=inp.get("va_benefit_person_a", 0.0), drawer_name="benefits", help_text="Enter monthly VA benefit.")
                 ltc_a_on = st.checkbox(f"{names['A']} has LTC policy", value=bool(inp.get("ltc_insurance_person_a", False)), key="ltc_insurance_person_a", on_change=mark_touched, args=("benefits",))
                 inp["ltc_insurance_person_a"] = ltc_a_on
                 if ltc_a_on:
-                    inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits")
+                    inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits", help_text="Enter monthly LTC benefit.")
                 if st.session_state.get("include_b", False):
                     inp["va_cat_b"] = st.selectbox(f"VA status — {names['B']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
-                    inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits")
+                    inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits", help_text="Enter monthly VA benefit.")
                     ltc_b_on = st.checkbox(f"{names['B']} has LTC policy", value=bool(inp.get("ltc_insurance_person_b", False)), key="ltc_insurance_person_b", on_change=mark_touched, args=("benefits",))
                     inp["ltc_insurance_person_b"] = ltc_b_on
                     if ltc_b_on:
-                        inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits")
+                        inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits", help_text="Enter monthly LTC benefit.")
             with expander("home_carry", "Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
                 inp["maintain_home"] = st.checkbox("Keep home", value=inp.get("maintain_home", False))
                 if inp["maintain_home"]:
                     try:
                         for f in spec["ui_groups"][3]["fields"]:
-                            inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry", help="Enter monthly cost.")
+                            inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry", help_text="Enter monthly cost.")
                     except Exception as e:
                         st.error(f"Error rendering home costs: {str(e)}")
             with expander("optional", "Other monthly costs (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec["ui_groups"][4]["fields"]])):
                 try:
                     for f in spec["ui_groups"][4]["fields"]:
-                        inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional", help="Leave at 0 if not applicable.")
+                        inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional", help_text="Leave at 0 if not applicable.")
                 except Exception as e:
                     st.error(f"Error rendering optional costs: {str(e)}")
             with expander("assets_common", "Assets — Common balances", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[1]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[1]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common", help="Enter current balance.")
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common", help_text="Enter current balance.")
             with expander("assets_more", "More asset types (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[2]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[2]["fields"]:
-                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more", help="Enter current balance or leave at 0.")
+                    inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more", help_text="Enter current balance or leave at 0.")
             home_mods_ui(inp, spec)
             inp["home_to_assets"] = st.checkbox("Include home equity in liquid assets", value=inp.get("home_to_assets", False), help="Check if you plan to sell or access home equity.")
         except Exception as e:
