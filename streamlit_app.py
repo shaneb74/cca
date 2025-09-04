@@ -76,33 +76,9 @@ def load_spec():
     ov = read_json(OVERLAY_PATH)
     if ov:
         spec.setdefault("lookups", {}).update(ov.get("lookups", {}))
-    spec.setdefault("lookups", {})
-    spec["lookups"].setdefault("state_multipliers", {"National": 1.0})
-    spec["lookups"].setdefault("room_type", {"Studio": 4200, "1 Bedroom": 5200, "Shared": 3800})
-    spec["lookups"].setdefault("care_level_adders", {"Low": 0, "Medium": 400, "High": 900})
-    spec["lookups"].setdefault(
-        "mobility_adders",
-        {
-            "facility": {"Low": 0, "Medium": 150, "High": 350},
-            "in_home": {"Low": 0, "Medium": 100, "High": 250},
-        },
-    )
-    spec["lookups"].setdefault("chronic_adders", {"None": 0, "Some": 150, "Multiple/Complex": 300})
-    spec["lookups"].setdefault("in_home_care_matrix", {"0": 0, "2": 45, "4": 42, "6": 40, "8": 38, "12": 36, "24": 34})
-    spec["lookups"].setdefault(
-        "va_categories",
-        {
-            "None": 0.0,
-            "Veteran only (A&A)": 2358.33,
-            "Veteran with spouse (A&A)": 2795.67,
-            "Two veterans married, both A&A (household ceiling)": 3740.50,
-            "Surviving spouse (A&A)": 1515.58,
-        },
-    )
-    spec.setdefault("settings", {}).setdefault("memory_care_multiplier", 1.25)
-    spec["settings"].setdefault("second_person_cost", 1200.0)
-    spec["settings"].setdefault("ltc_monthly_add", 1800.0)
-    spec["settings"].setdefault("display_cap_years_funded", 30)
+        spec.setdefault("ui_group_additions", []).extend(ov.get("ui_group_additions", []))
+        if "ui_group_overrides" in ov:
+            spec.setdefault("ui_group_overrides", {}).update(ov["ui_group_overrides"])
     return spec
 
 def interp(matrix, h):
@@ -461,7 +437,7 @@ def main():
             st.session_state.step = 4
             st.rerun()
 
-    else:
+    elif st.session_state.step == 4:
         st.header("Step 4 · Results")
         with st.spinner("Calculating..."):
             res = compute(inp, spec)
