@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb19"
+APP_VERSION = "v2025-09-03-rb20"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -299,10 +299,10 @@ def mark_touched(drawer):
     """Mark an expander as touched for persistence."""
     st.session_state.touched.add(drawer)
 
-def expander(drawer, title, preview_val):
-    """Render an expander with preview value."""
+def expander(drawer, title, preview_val=0.0):
+    """Render an expander with preview value, with a safe default."""
     is_open = drawer in st.session_state.touched
-    with st.expander(f"{title} — {mfmt(preview_val)}", expanded=is_open):
+    with st.expander(f"{title} — ${mfmt(preview_val)}", expanded=is_open):
         return st.container()
 
 def home_mods_ui(inp, spec):
@@ -416,30 +416,35 @@ def main():
         )
         if audience == "Myself":
             names["A"] = st.text_input("Your name", value=names.get("A", "Me"), help="Enter your name.")
-        elif audience == "One parent":
-            names["A"] = st.text_input("Parent's name", value=names.get("A", "Mom or Dad"), help="Enter your parent's name.")
-            has_spouse = st.checkbox("Is there a spouse or partner living with them?", value=st.session_state.get("has_spouse", False))
+            has_spouse = st.checkbox("Is there a spouse or partner you'd want to plan for too? Sometimes care for one changes life for both.", value=st.session_state.get("has_spouse", False))
             if has_spouse:
-                names["B"] = st.text_input("Spouse or partner's name", value=names.get("B", "Spouse"), help="Enter the spouse or partner's name.")
+                names["B"] = st.text_input("What's their name?", value=names.get("B", "Spouse"), help="Enter your spouse or partner's name.")
+                st.session_state.include_b = True
+        elif audience == "One parent":
+            names["A"] = st.text_input("Awesome-so you're planning for one parent. What's their name?", value=names.get("A", "Mom"), help="Enter your parent's name.")
+            has_spouse = st.checkbox("Are they still sharing the home with someone—like a spouse or partner?", value=st.session_state.get("has_spouse", False))
+            if has_spouse:
+                names["B"] = st.text_input("What's their name? We'll walk you through both.", value=names.get("B", "Spouse"), help="Enter the spouse or partner's name.")
                 st.session_state.include_b = True
         elif audience == "Both parents":
-            names["A"] = st.text_input("First parent's name", value=names.get("A", "Mom"), help="Enter the first parent's name.")
-            names["B"] = st.text_input("Second parent's name", value=names.get("B", "Dad"), help="Enter the second parent's name.")
+            names["A"] = st.text_input("Awesome-so you're planning for both parents. What's the first parent's name?", value=names.get("A", "Mom"), help="Enter the first parent's name.")
+            names["B"] = st.text_input("What's the second parent's name?", value=names.get("B", "Dad"), help="Enter the second parent's name.")
             st.session_state.include_b = True
         else:  # Loved one or family member
-            names["A"] = st.text_input("Loved one's name", value=names.get("A", "Loved One"), help="Enter the loved one or family member's name.")
-            include_b = st.checkbox("Include a second person?", value=st.session_state.get("include_b", False))
-            st.session_state.include_b = include_b
-            if include_b:
-                names["B"] = st.text_input("Second person's name", value=names.get("B", "Person B"), help="Enter the second person's name.")
-        inp["maintain_home"] = st.checkbox("Plan to maintain the home?", value=inp.get("maintain_home", False), help="Check if you plan to keep the home.")
+            names["A"] = st.text_input("Awesome-so you're planning for a loved one or family member. What's their name?", value=names.get("A", "Loved One"), help="Enter the loved one or family member's name.")
+            has_spouse = st.checkbox("Is a spouse or partner living with them? Sometimes one person's care changes everything for the other.", value=st.session_state.get("has_spouse", False))
+            if has_spouse:
+                names["B"] = st.text_input("What's their name? We'll walk you through both.", value=names.get("B", "Partner"), help="Enter the spouse or partner's name.")
+                st.session_state.include_b = True
+        inp["maintain_home"] = st.checkbox("Got it—so if you're keeping their place while they're away, we'll roll in mortgage, bills, everything. Yes, include home costs.", value=inp.get("maintain_home", False))
+        inp["state"] = st.selectbox("Care costs—like room rates or hourly help—can vary a ton by state. So, where will this be happening?", list(spec["lookups"]["state_multipliers"].keys()), index=0)
         if st.button("Next →", type="primary", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
 
     elif st.session_state.step == 2:
         st.header(f"Care needs for {names['A']}")
-        st.markdown(f"With {names['A']} heading into care, is {names.get('B', 'someone else')} okay staying home alone? Or might they need help too?")
+        st.markdown(f"We'll handle {names.get('B', 'their partner')}’s right after—just focus here first.")
         care_types = ["In-Home Care", "Assisted Living (or Adult Family Home)", "Memory Care", "None"]
         inp[f"care_type_a"] = st.selectbox(f"Care type for {names['A']}", care_types, index=care_types.index(inp.get(f"care_type_a", "None")))
         if inp[f"care_type_a"].startswith("In-Home"):
@@ -455,6 +460,8 @@ def main():
             inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
 
         if st.session_state.get("include_b", False):
+            st.markdown("---")
+            st.header(f"Now—care needs for {names['B']}")
             second_person_options = ["Staying home alone", "Needs in-home help", "Maybe assisted living?", "Same as " + names["A"], "He's okay, no change"]
             inp["second_person_status"] = st.selectbox(f"{names['B']}'s situation", second_person_options, index=0)
             if inp["second_person_status"] != "He's okay, no change":
@@ -471,7 +478,6 @@ def main():
                     inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
                     inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
 
-        inp["state"] = st.selectbox("State", list(spec["lookups"]["state_multipliers"].keys()), index=0)
         c1, c2 = st.columns(2)
         if c1.button("← Back", use_container_width=True):
             st.session_state.step = 1
