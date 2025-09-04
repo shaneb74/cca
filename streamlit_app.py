@@ -3,11 +3,8 @@ from pathlib import Path
 from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import io
 
-APP_VERSION = "v2025-09-03-rb13"
+APP_VERSION = "v2025-09-03-rb13-no-reportlab-no-css"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -189,8 +186,7 @@ def calculate_optional_costs(inputs):
             "optional_personal_care",
             "optional_phone_internet",
             "optional_life_insurance",
-            "optional_transportation",
-            "optional_family_travel",
+            "optional_new_car",
             "optional_auto",
             "optional_auto_insurance",
             "optional_other",
@@ -333,50 +329,8 @@ def home_mods_ui(inp, spec):
         )
         inp["home_modifications_monthly"] = money(inp.get("grab_bars", 0) / 12)
 
-# ---------- PDF export
-def generate_pdf(inputs, results, names):
-    """Generate PDF summary of the care plan."""
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica", 14)
-    y = 750
-    c.drawString(50, y, "Senior Care Cost Plan Summary")
-    y -= 30
-    c.setFont("Helvetica", 12)
-    c.drawString(50, y, f"For: {names.get('A', 'Person A')}" + (f" and {names.get('B', 'Person B')}" if st.session_state.get("include_b", False) else ""))
-    y -= 20
-    c.drawString(50, y, f"Generated: {st.session_state.get('timestamp', '2025-09-03')}")
-    y -= 30
-    c.drawString(50, y, f"Total Monthly Cost: {mfmt(results['month_cost'])}")
-    y -= 20
-    c.drawString(50, y, f"Care Cost: {mfmt(results['care'])}")
-    y -= 20
-    c.drawString(50, y, f"Household Income: {mfmt(results['income'])}")
-    y -= 20
-    c.drawString(50, y, f"Monthly Gap: {mfmt(results['gap'])}")
-    y -= 20
-    c.drawString(50, y, f"VA Benefit ({names.get('A', 'Person A')}): {mfmt(results['va_a'])}")
-    if st.session_state.get("include_b", False):
-        y -= 20
-        c.drawString(50, y, f"VA Benefit ({names.get('B', 'Person B')}): {mfmt(results['va_b'])}")
-    y -= 20
-    c.drawString(50, y, f"Liquid Assets: {mfmt(results['liquid'])}")
-    y -= 20
-    c.drawString(50, y, f"Years Funded: {results['years']:.1f} years" if results['gap'] > 0 else "No deficit")
-    y -= 30
-    c.setFont("Helvetica-Oblique", 10)
-    c.drawString(50, y, "Note: This is an estimate. Consult a financial advisor.")
-    c.showPage()
-    c.save()
-    buffer.seek(0)
-    return buffer
-
 # ---------- main
 def main():
-    # Load custom CSS
-    with open("static/style.css") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-
     # Initialize session state
     if "step" not in st.session_state:
         st.session_state.step = 1
@@ -533,15 +487,6 @@ def main():
             ).properties(width="container")
             st.altair_chart(chart, use_container_width=True)
         st.markdown("**Note**: This is an estimate. Consult a financial advisor for personalized planning.")
-        if st.button("Download PDF Summary", use_container_width=True):
-            pdf_buffer = generate_pdf(inp, res, names)
-            st.download_button(
-                label="Download PDF",
-                data=pdf_buffer,
-                file_name=f"Senior_Care_Plan_{names['A']}_{st.session_state.get('timestamp', '2025-09-03')}.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
         if st.button("Start Over", use_container_width=True):
             st.session_state.clear()
             st.rerun()
