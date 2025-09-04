@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb17"
+APP_VERSION = "v2025-09-03-rb18"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -407,11 +407,29 @@ def main():
 
     if st.session_state.step == 1:
         st.header("Step 1 · Who is this for?")
-        names["A"] = st.text_input("Name of Person A", value=names.get("A", "Person A"), help="Enter the primary person's name.")
-        include_b = st.checkbox("Include a second person (e.g., spouse)", value=st.session_state.get("include_b", False))
-        st.session_state.include_b = include_b
-        if include_b:
-            names["B"] = st.text_input("Name of Person B", value=names.get("B", "Person B"), help="Enter the second person's name.")
+        audience = st.radio(
+            "Who are you planning for?",
+            ["Planning for myself", "For my parent", "For my spouse/partner", "For two people", "Other"],
+            index=0,
+            help="Select who this plan is for to personalize the experience."
+        )
+        if audience == "Planning for myself":
+            names["A"] = st.text_input("Your name", value=names.get("A", "Me"), help="Enter your name.")
+        elif audience == "For my parent":
+            names["A"] = st.text_input("Name of parent", value=names.get("A", "Mom or Dad"), help="Enter your parent's name.")
+        elif audience == "For my spouse/partner":
+            names["A"] = st.text_input("Name of spouse/partner", value=names.get("A", "Partner"), help="Enter your spouse's or partner's name.")
+        elif audience == "For two people":
+            names["A"] = st.text_input("Name of person A", value=names.get("A", "Person A"), help="Enter the first person's name.")
+            names["B"] = st.text_input("Name of person B", value=names.get("B", "Person B"), help="Enter the second person's name.")
+            st.session_state.include_b = True
+        else:  # Other
+            names["A"] = st.text_input("Name of person A", value=names.get("A", "Person A"), help="Enter the first person's name.")
+            include_b = st.checkbox("Include a second person?", value=st.session_state.get("include_b", False))
+            st.session_state.include_b = include_b
+            if include_b:
+                names["B"] = st.text_input("Name of person B", value=names.get("B", "Person B"), help="Enter the second person's name.")
+        inp["maintain_home"] = st.checkbox("Plan to maintain home?", value=inp.get("maintain_home", False), help="Check if you plan to keep the home.")
         if st.button("Next →", type="primary", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
