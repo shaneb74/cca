@@ -17,12 +17,12 @@ Deploy
 Commit all files to your GitHub repo (cca, branch Grok-Dev).
 Ensure requirements.txt, senior_care_calculator_v5_full_with_instructions_ui.json, and senior_care_modular_overlay.json are in the repo root.
 Point Streamlit Cloud to your branch and streamlit_app.py.
-Verify the sidebar footer shows App v2025-09-03-rb14.
+Verify the sidebar footer shows App v2025-09-03-rb19.
 If deployment fails, check Streamlit Cloud logs. Ensure requirements.txt is present, correctly formatted (Unix line endings, no extra whitespace), and includes streamlit>=1.31,<2 and altair>=5.0.1. Verify both JSON schema files are present and correctly formatted.
 
 File overview
 
-streamlit_app.py: App code with enhanced UX (progress bar, sliders, runway chart) and robust error handling
+streamlit_app.py: App code with enhanced UX (progress bar, sliders, runway chart) and robust error handling, updated for empathetic Step 1 and Step 2 flow
 senior_care_calculator_v5_full_with_instructions_ui.json: Base schema
 senior_care_modular_overlay.json: Overlay for income/assets
 requirements_streamlit.txt: Pinned dependencies for reference

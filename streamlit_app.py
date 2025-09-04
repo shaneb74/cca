@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb18"
+APP_VERSION = "v2025-09-03-rb19"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -386,7 +386,9 @@ def main():
         st.session_state.names = {"A": "Person A", "B": "Person B"}
 
     # Empathetic onboarding
-    st.info("We’re here to help you navigate senior care costs. Take it one step at a time, and don’t worry if you’re unsure—we can estimate.")
+    st.title("Helping you understand senior care costs")
+    st.markdown("This'll walk you through what things might look like—names, numbers, no surprises. Let's start with who you're caring for.")
+    st.markdown("Take your time. You're not alone in this.")
 
     # Progress bar
     st.progress(st.session_state.step / 4, text=f"Step {st.session_state.step} of 4")
@@ -406,63 +408,68 @@ def main():
     names = st.session_state.names
 
     if st.session_state.step == 1:
-        st.header("Step 1 · Who is this for?")
         audience = st.radio(
-            "Who are you planning for?",
-            ["Planning for myself", "For my parent", "For my spouse/partner", "For two people", "Other"],
+            "Who are you caring for?",
+            ["Myself", "One parent", "Both parents", "Loved one or family member"],
             index=0,
             help="Select who this plan is for to personalize the experience."
         )
-        if audience == "Planning for myself":
+        if audience == "Myself":
             names["A"] = st.text_input("Your name", value=names.get("A", "Me"), help="Enter your name.")
-        elif audience == "For my parent":
-            names["A"] = st.text_input("Name of parent", value=names.get("A", "Mom or Dad"), help="Enter your parent's name.")
-        elif audience == "For my spouse/partner":
-            names["A"] = st.text_input("Name of spouse/partner", value=names.get("A", "Partner"), help="Enter your spouse's or partner's name.")
-        elif audience == "For two people":
-            names["A"] = st.text_input("Name of person A", value=names.get("A", "Person A"), help="Enter the first person's name.")
-            names["B"] = st.text_input("Name of person B", value=names.get("B", "Person B"), help="Enter the second person's name.")
+        elif audience == "One parent":
+            names["A"] = st.text_input("Parent's name", value=names.get("A", "Mom or Dad"), help="Enter your parent's name.")
+            has_spouse = st.checkbox("Is there a spouse or partner living with them?", value=st.session_state.get("has_spouse", False))
+            if has_spouse:
+                names["B"] = st.text_input("Spouse or partner's name", value=names.get("B", "Spouse"), help="Enter the spouse or partner's name.")
+                st.session_state.include_b = True
+        elif audience == "Both parents":
+            names["A"] = st.text_input("First parent's name", value=names.get("A", "Mom"), help="Enter the first parent's name.")
+            names["B"] = st.text_input("Second parent's name", value=names.get("B", "Dad"), help="Enter the second parent's name.")
             st.session_state.include_b = True
-        else:  # Other
-            names["A"] = st.text_input("Name of person A", value=names.get("A", "Person A"), help="Enter the first person's name.")
+        else:  # Loved one or family member
+            names["A"] = st.text_input("Loved one's name", value=names.get("A", "Loved One"), help="Enter the loved one or family member's name.")
             include_b = st.checkbox("Include a second person?", value=st.session_state.get("include_b", False))
             st.session_state.include_b = include_b
             if include_b:
-                names["B"] = st.text_input("Name of person B", value=names.get("B", "Person B"), help="Enter the second person's name.")
-        inp["maintain_home"] = st.checkbox("Plan to maintain home?", value=inp.get("maintain_home", False), help="Check if you plan to keep the home.")
+                names["B"] = st.text_input("Second person's name", value=names.get("B", "Person B"), help="Enter the second person's name.")
+        inp["maintain_home"] = st.checkbox("Plan to maintain the home?", value=inp.get("maintain_home", False), help="Check if you plan to keep the home.")
         if st.button("Next →", type="primary", use_container_width=True):
             st.session_state.step = 2
             st.rerun()
 
     elif st.session_state.step == 2:
-        st.header("Step 2 · Care Needs")
+        st.header(f"Care needs for {names['A']}")
+        st.markdown(f"With {names['A']} heading into care, is {names.get('B', 'someone else')} okay staying home alone? Or might they need help too?")
         care_types = ["In-Home Care", "Assisted Living (or Adult Family Home)", "Memory Care", "None"]
-        inp["care_type_a"] = st.selectbox(f"Care type for {names['A']}", care_types, index=care_types.index(inp.get("care_type_a", "None")))
-        if inp["care_type_a"].startswith("In-Home"):
-            inp["hours_a"] = st.slider(f"Daily hours for {names['A']}", 0, 24, int(inp.get("hours_a", 4)), help="Estimate hours of care needed per day.")
-            inp["days_a"] = st.slider(f"Days per month for {names['A']}", 0, 30, int(inp.get("days_a", 20)), help="Estimate days per month for care.")
-            inp["care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp["mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp["chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
-        elif inp["care_type_a"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
-            inp["room_a"] = st.selectbox(f"Room type for {names['A']}", ["Studio", "1 Bedroom", "Shared"], index=0)
-            inp["care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp["mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
-            inp["chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
+        inp[f"care_type_a"] = st.selectbox(f"Care type for {names['A']}", care_types, index=care_types.index(inp.get(f"care_type_a", "None")))
+        if inp[f"care_type_a"].startswith("In-Home"):
+            inp[f"hours_a"] = st.slider(f"Daily hours for {names['A']}", 0, 24, int(inp.get(f"hours_a", 4)), help="Estimate hours of care needed per day.")
+            inp[f"days_a"] = st.slider(f"Days per month for {names['A']}", 0, 30, int(inp.get(f"days_a", 20)), help="Estimate days per month for care.")
+            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
+            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
+            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
+        elif inp[f"care_type_a"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
+            inp[f"room_a"] = st.selectbox(f"Room type for {names['A']}", ["Studio", "1 Bedroom", "Shared"], index=0)
+            inp[f"care_level_a"] = st.selectbox(f"Care level for {names['A']}", ["Low", "Medium", "High"], index=1)
+            inp[f"mobility_a"] = st.selectbox(f"Mobility for {names['A']}", ["Low", "Medium", "High"], index=1)
+            inp[f"chronic_a"] = st.selectbox(f"Chronic conditions for {names['A']}", ["None", "Some", "Multiple/Complex"], index=0)
 
         if st.session_state.get("include_b", False):
-            inp["care_type_b"] = st.selectbox(f"Care type for {names['B']}", care_types, index=care_types.index(inp.get("care_type_b", "None")))
-            if inp["care_type_b"].startswith("In-Home"):
-                inp["hours_b"] = st.slider(f"Daily hours for {names['B']}", 0, 24, int(inp.get("hours_b", 4)), help="Estimate hours of care needed per day.")
-                inp["days_b"] = st.slider(f"Days per month for {names['B']}", 0, 30, int(inp.get("days_b", 20)), help="Estimate days per month for care.")
-                inp["care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
-                inp["mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
-                inp["chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
-            elif inp["care_type_b"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
-                inp["room_b"] = st.selectbox(f"Room type for {names['B']}", ["Studio", "1 Bedroom", "Shared"], index=0)
-                inp["care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
-                inp["mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
-                inp["chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
+            second_person_options = ["Staying home alone", "Needs in-home help", "Maybe assisted living?", "Same as " + names["A"], "He's okay, no change"]
+            inp["second_person_status"] = st.selectbox(f"{names['B']}'s situation", second_person_options, index=0)
+            if inp["second_person_status"] != "He's okay, no change":
+                inp[f"care_type_b"] = st.selectbox(f"Care type for {names['B']}", care_types, index=care_types.index(inp.get(f"care_type_b", "None")))
+                if inp[f"care_type_b"].startswith("In-Home"):
+                    inp[f"hours_b"] = st.slider(f"Daily hours for {names['B']}", 0, 24, int(inp.get(f"hours_b", 4)), help="Estimate hours of care needed per day.")
+                    inp[f"days_b"] = st.slider(f"Days per month for {names['B']}", 0, 30, int(inp.get(f"days_b", 20)), help="Estimate days per month for care.")
+                    inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
+                    inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
+                    inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
+                elif inp[f"care_type_b"] in ["Assisted Living (or Adult Family Home)", "Memory Care"]:
+                    inp[f"room_b"] = st.selectbox(f"Room type for {names['B']}", ["Studio", "1 Bedroom", "Shared"], index=0)
+                    inp[f"care_level_b"] = st.selectbox(f"Care level for {names['B']}", ["Low", "Medium", "High"], index=1)
+                    inp[f"mobility_b"] = st.selectbox(f"Mobility for {names['B']}", ["Low", "Medium", "High"], index=1)
+                    inp[f"chronic_b"] = st.selectbox(f"Chronic conditions for {names['B']}", ["None", "Some", "Multiple/Complex"], index=0)
 
         inp["state"] = st.selectbox("State", list(spec["lookups"]["state_multipliers"].keys()), index=0)
         c1, c2 = st.columns(2)
@@ -476,31 +483,31 @@ def main():
     elif st.session_state.step == 3:
         st.header("Step 3 · Finances")
         try:
-            with expander("income_a", f"Income — {names['A']}", inp.get("social_security_person_a", 0.0) + inp.get("pension_person_a", 0.0)):
-                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name="income_a")
-                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name="income_a")
-            if st.session_state.get("include_b", False):
-                with expander("income_b", f"Income — {names['B']}", inp.get("social_security_person_b", 0.0) + inp.get("pension_person_b", 0.0)):
-                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name="income_b")
-                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name="income_b")
-            with expander("income_household", "Income — Household", sum(inp.get(k, 0.0) for k in ["rental_income", "wages_part_time", "alimony_support", "dividends_interest", "other_income_monthly"])):
+            with expander(f"Income — {names['A']}", inp.get("social_security_person_a", 0.0) + inp.get("pension_person_a", 0.0)):
+                inp["social_security_person_a"] = currency_input(f"Social Security — {names['A']}", "social_security_person_a", default=inp.get("social_security_person_a", 0.0), drawer_name=f"income_{names['A']}")
+                inp["pension_person_a"] = currency_input(f"Pension — {names['A']}", "pension_person_a", default=inp.get("pension_person_a", 0.0), drawer_name=f"income_{names['A']}")
+            if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
+                with expander(f"Income — {names['B']}", inp.get("social_security_person_b", 0.0) + inp.get("pension_person_b", 0.0)):
+                    inp["social_security_person_b"] = currency_input(f"Social Security — {names['B']}", "social_security_person_b", default=inp.get("social_security_person_b", 0.0), drawer_name=f"income_{names['B']}")
+                    inp["pension_person_b"] = currency_input(f"Pension — {names['B']}", "pension_person_b", default=inp.get("pension_person_b", 0.0), drawer_name=f"income_{names['B']}")
+            with expander("Income — Household", sum(inp.get(k, 0.0) for k in ["rental_income", "wages_part_time", "alimony_support", "dividends_interest", "other_income_monthly"])):
                 for f in spec.get("ui_group_additions", [])[0]["fields"]:
                     inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="income_household")
-            with expander("benefits", "Benefits", inp.get("va_benefit_person_a", 0.0) + inp.get("va_benefit_person_b", 0.0)):
+            with expander("Benefits", inp.get("va_benefit_person_a", 0.0) + inp.get("va_benefit_person_b", 0.0)):
                 inp["va_cat_a"] = st.selectbox(f"VA status — {names['A']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
                 inp["va_benefit_person_a"] = currency_input(f"VA benefit — {names['A']}", "va_benefit_person_a", default=inp.get("va_benefit_person_a", 0.0), drawer_name="benefits")
-                ltc_a_on = st.checkbox(f"{names['A']} has LTC policy", value=bool(inp.get("ltc_insurance_person_a", False)), key="ltc_insurance_person_a", on_change=mark_touched, args=("benefits",))
+                ltc_a_on = st.checkbox(f"{names['A']} has LTC policy", value=bool(inp.get("ltc_insurance_person_a", False)), key=f"ltc_insurance_person_a_{names['A']}", on_change=mark_touched, args=("benefits",))
                 inp["ltc_insurance_person_a"] = ltc_a_on
                 if ltc_a_on:
                     inp["ltc_insurance_person_a_monthly"] = currency_input(f"Monthly LTC benefit — {names['A']}", "ltc_insurance_person_a_monthly", default=inp.get("ltc_insurance_person_a_monthly", 0.0), drawer_name="benefits")
-                if st.session_state.get("include_b", False):
+                if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
                     inp["va_cat_b"] = st.selectbox(f"VA status — {names['B']}", list(spec["lookups"]["va_categories"].keys()), index=0, help="Select VA benefit category.")
                     inp["va_benefit_person_b"] = currency_input(f"VA benefit — {names['B']}", "va_benefit_person_b", default=inp.get("va_benefit_person_b", 0.0), drawer_name="benefits")
-                    ltc_b_on = st.checkbox(f"{names['B']} has LTC policy", value=bool(inp.get("ltc_insurance_person_b", False)), key="ltc_insurance_person_b", on_change=mark_touched, args=("benefits",))
+                    ltc_b_on = st.checkbox(f"{names['B']} has LTC policy", value=bool(inp.get("ltc_insurance_person_b", False)), key=f"ltc_insurance_person_b_{names['B']}", on_change=mark_touched, args=("benefits",))
                     inp["ltc_insurance_person_b"] = ltc_b_on
                     if ltc_b_on:
                         inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits")
-            with expander("home_carry", "Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
+            with expander("Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
                 inp["maintain_home"] = st.checkbox("Keep home", value=inp.get("maintain_home", False))
                 if inp["maintain_home"]:
                     try:
@@ -508,16 +515,16 @@ def main():
                             inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry")
                     except Exception as e:
                         st.error(f"Error rendering home costs: {str(e)}")
-            with expander("optional", "Other monthly costs (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec["ui_groups"][4]["fields"]])):
+            with expander("Other monthly costs (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec["ui_groups"][4]["fields"]])):
                 try:
                     for f in spec["ui_groups"][4]["fields"]:
                         inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional")
                 except Exception as e:
                     st.error(f"Error rendering optional costs: {str(e)}")
-            with expander("assets_common", "Assets — Common balances", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[1]["fields"]])):
+            with expander("Assets — Common balances", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[1]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[1]["fields"]:
                     inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common")
-            with expander("assets_more", "More asset types (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[2]["fields"]])):
+            with expander("More asset types (optional)", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[2]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[2]["fields"]:
                     inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_more")
             home_mods_ui(inp, spec)
@@ -546,7 +553,7 @@ def main():
             st.metric("Monthly Gap", mfmt(res["gap"]))
         with c3:
             st.metric(f"VA Benefit — {names['A']}", mfmt(res["va_a"]))
-            if st.session_state.get("include_b", False):
+            if st.session_state.get("include_b", False) and inp.get("second_person_status") != "He's okay, no change":
                 st.metric(f"VA Benefit — {names['B']}", mfmt(res["va_b"]))
         if res["gap"] <= 0.0:
             st.success("No deficit. Your monthly income covers the planned costs, so assets are not needed for ongoing expenses.")
