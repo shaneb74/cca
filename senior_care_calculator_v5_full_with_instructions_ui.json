@@ -166,7 +166,7 @@
           "default": 0
         },
         {
-          "id": "hoa",
+          "field": "hoa",
           "label": "HOA/condo fees",
           "kind": "currency",
           "default": 0

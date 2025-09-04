@@ -15,10 +15,10 @@ No deprecated Streamlit APIs; compatible with Streamlit 1.31+
 Deploy
 
 Commit all files to your GitHub repo (cca, branch Grok-Dev).
-Ensure requirements.txt and senior_care_calculator_v5_full_with_instructions_ui.json are in the repo root.
+Ensure requirements.txt, senior_care_calculator_v5_full_with_instructions_ui.json, and senior_care_modular_overlay.json are in the repo root.
 Point Streamlit Cloud to your branch and streamlit_app.py.
 Verify the sidebar footer shows App v2025-09-03-rb13-no-reportlab-no-css.
-If deployment fails, check Streamlit Cloud logs. Ensure requirements.txt is present, correctly formatted (Unix line endings, no extra whitespace), and includes streamlit>=1.31,<2 and altair>=5.0.1. Verify senior_care_calculator_v5_full_with_instructions_ui.json and senior_care_modular_overlay.json are present.
+If deployment fails, check Streamlit Cloud logs. Ensure requirements.txt is present, correctly formatted (Unix line endings, no extra whitespace), and includes streamlit>=1.31,<2 and altair>=5.0.1. Verify both JSON schema files are present and correctly formatted.
 
 File overview
 
