@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb15"
+APP_VERSION = "v2025-09-03-rb17"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -494,8 +494,8 @@ def main():
                 try:
                     for f in spec["ui_groups"][4]["fields"]:
                         inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="optional")
-                    except Exception as e:
-                        st.error(f"Error rendering optional costs: {str(e)}")
+                except Exception as e:
+                    st.error(f"Error rendering optional costs: {str(e)}")
             with expander("assets_common", "Assets — Common balances", sum(inp.get(k, 0.0) for k in [f["field"] for f in spec.get("ui_group_additions", [])[1]["fields"]])):
                 for f in spec.get("ui_group_additions", [])[1]["fields"]:
                     inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="assets_common")
