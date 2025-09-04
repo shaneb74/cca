@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb14"
+APP_VERSION = "v2025-09-03-rb15"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
