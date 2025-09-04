@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import streamlit as st
 import altair as alt
 
-APP_VERSION = "v2025-09-03-rb21"
+APP_VERSION = "v2025-09-03-rb22"
 SPEC_PATH = "senior_care_calculator_v5_full_with_instructions_ui.json"
 OVERLAY_PATH = "senior_care_modular_overlay.json"
 
@@ -449,7 +449,7 @@ def main():
             inp["maintain_home"] = True
         if col2.button("No, not keeping it"):
             inp["maintain_home"] = False
-        if inp["maintain_home"]:
+        if inp.get("maintain_home", False):
             col1, col2 = st.columns(2)
             if col1.button("Yes, plan to sell"):
                 inp["sell_home"] = True
@@ -530,7 +530,7 @@ def main():
                         inp["ltc_insurance_person_b_monthly"] = currency_input(f"Monthly LTC benefit — {names['B']}", "ltc_insurance_person_b_monthly", default=inp.get("ltc_insurance_person_b_monthly", 0.0), drawer_name="benefits")
                 st.markdown(f"[Check Aid & Attendance eligibility](https://www.va.gov/pension/aid-attendance-housebound/)")
             with expander("Home costs (if keeping home)", sum(inp.get(k, 0.0) for k in ["mortgage", "taxes", "insurance", "hoa", "utilities"])):
-                if inp["maintain_home"]:
+                if inp.get("maintain_home", False):
                     try:
                         for f in spec["ui_groups"][3]["fields"]:
                             inp[f["field"]] = currency_input(f["label"], f["field"], default=inp.get(f["field"], 0.0), drawer_name="home_carry")
